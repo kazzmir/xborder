@@ -1,4 +1,8 @@
 #include <X11/Xlib.h>
+
+#define XK_MISCELLANY
+#include <X11/keysymdef.h>
+
 #include <iostream>
 #include <stdlib.h>
 #include <string.h>
@@ -25,7 +29,7 @@ int main(){
     yellow.blue = 0;
     Colormap screen_colormap = DefaultColormap(display, screen);
     int yellow_color = XAllocColor(display, screen_colormap, &yellow);
-    std::cout << "yellow color " << yellow_color << std::endl;
+    // std::cout << "yellow color " << yellow_color << std::endl;
 
     XWindowAttributes child_attributes;
     XGetWindowAttributes(display, use_terminal, &child_attributes);
@@ -33,24 +37,71 @@ int main(){
     int border_size = 3;
 
     window = XCreateSimpleWindow(display, RootWindow(display, screen), child_attributes.x, child_attributes.y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), yellow.pixel);
-    XSelectInput(display, window, ExposureMask | KeyPressMask | StructureNotifyMask);
+    XSelectInput(display, window,
+                 ExposureMask |
+                 StructureNotifyMask);
+    XSelectInput(display, use_terminal, KeyPressMask | KeyReleaseMask);
     XMapWindow(display, window);
 
     XReparentWindow(display, use_terminal, window, border_size, border_size);
+    XMoveWindow(display, window, child_attributes.x, child_attributes.y);
 
+    bool shift_pressed = false;
+    bool alt_pressed = false;
     while (1){
         XEvent event;
         XNextEvent(display, &event);
         if (event.type == Expose){
-            /*
-            XFillRectangle(display, window, DefaultGC(display, screen), 20, 20, 10, 10);
-            XDrawString(display, window, DefaultGC(display, screen), 10, 50, "hi", strlen("hi"));
-            */
+            /* anything to do here? the child already seems to get expose events */
+        } else if (event.type == ConfigureNotify){
+            XWindowAttributes self;
+            XGetWindowAttributes(display, window, &self);
+            XResizeWindow(display, use_terminal, self.width - border_size * 2, self.height - border_size * 2);
         } else if (event.type == KeyPress){
-            break;
+            KeySym sym = XLookupKeysym(&event.xkey, 0);
+
+            if (sym == XK_Shift_L){
+                // std::cout << "Pressed left shift" << std::endl;
+                shift_pressed = true;
+            }
+
+            if (sym == XK_Alt_L){
+                // std::cout << "Pressed left alt" << std::endl;
+                alt_pressed = true;
+            }
+
+            if (shift_pressed && sym == XK_Tab){
+                break;
+            }
+
+            if (shift_pressed && alt_pressed){
+                std::cout << "magic" << std::endl;
+            }
+
+            /*
+            std::cout << "Pressed key " << sym << std::endl;
+            if (event.xkey.keycode == 0x09){
+                break;
+            }
+
+
+            */
+        } else if (event.type == KeyRelease){
+            // std::cout << "Release key" << std::endl;
+            KeySym sym = XLookupKeysym(&event.xkey, 0);
+            if (sym == XK_Shift_L){
+                shift_pressed = false;
+            }
+            if (sym == XK_Alt_L){
+                alt_pressed = false;
+            }
         }
     }
 
-    XReparentWindow(display, use_terminal, RootWindow(display, screen), child_attributes.x, child_attributes.y);
+    Window child_root = child_attributes.root;
+    /* Place the window wherever the container is now */
+    XGetWindowAttributes(display, window, &child_attributes);
+    XReparentWindow(display, use_terminal, child_root, child_attributes.x, child_attributes.y);
+    XMoveWindow(display, use_terminal, child_attributes.x, child_attributes.y);
     XCloseDisplay(display);
 }
