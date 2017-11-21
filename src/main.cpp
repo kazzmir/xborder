@@ -31,12 +31,16 @@ int main(){
     int yellow_color = XAllocColor(display, screen_colormap, &yellow);
     // std::cout << "yellow color " << yellow_color << std::endl;
 
+    int child_x, child_y;
     XWindowAttributes child_attributes;
     XGetWindowAttributes(display, use_terminal, &child_attributes);
+    Window child;
+    XTranslateCoordinates(display, use_terminal, child_attributes.root, 0, 0, &child_x, &child_y, &child);
+    std::cout << "Window at " << child_x << ", " << child_y << std::endl;
 
     int border_size = 3;
 
-    window = XCreateSimpleWindow(display, RootWindow(display, screen), child_attributes.x, child_attributes.y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), yellow.pixel);
+    window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), yellow.pixel);
     XSelectInput(display, window,
                  ExposureMask |
                  StructureNotifyMask);
@@ -44,7 +48,9 @@ int main(){
     XMapWindow(display, window);
 
     XReparentWindow(display, use_terminal, window, border_size, border_size);
-    XMoveWindow(display, window, child_attributes.x, child_attributes.y);
+    XMoveWindow(display, window, child_x, child_y);
+
+    XStoreName(display, window, "XBorder");
 
     bool shift_pressed = false;
     bool alt_pressed = false;
@@ -102,6 +108,7 @@ int main(){
     /* Place the window wherever the container is now */
     XGetWindowAttributes(display, window, &child_attributes);
     XReparentWindow(display, use_terminal, child_root, child_attributes.x, child_attributes.y);
-    XMoveWindow(display, use_terminal, child_attributes.x, child_attributes.y);
+    XTranslateCoordinates(display, window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
+    XMoveWindow(display, use_terminal, child_x, child_y - border_size * 2);
     XCloseDisplay(display);
 }
