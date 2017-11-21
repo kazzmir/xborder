@@ -1,4 +1,5 @@
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 
 #define XK_MISCELLANY
 #include <X11/keysymdef.h>
@@ -19,7 +20,7 @@ int main(){
 
     int screen = DefaultScreen(display);
 
-    int use_terminal = 0x38d34c0;
+    int use_terminal = 0x38eb6ea;
 
     XColor yellow;
     memset(&yellow, 0, sizeof(XColor));
@@ -47,6 +48,9 @@ int main(){
     XSelectInput(display, use_terminal, KeyPressMask | KeyReleaseMask);
     XMapWindow(display, window);
 
+    Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
+    XSetWMProtocols(display, window, &wm_delete_window, 1);
+
     XReparentWindow(display, use_terminal, window, border_size, border_size);
     XMoveWindow(display, window, child_x, child_y);
 
@@ -54,52 +58,83 @@ int main(){
 
     bool shift_pressed = false;
     bool alt_pressed = false;
+
+    Window option_window = 0;
+
     while (1){
         XEvent event;
         XNextEvent(display, &event);
-        if (event.type == Expose){
-            /* anything to do here? the child already seems to get expose events */
-        } else if (event.type == ConfigureNotify){
-            XWindowAttributes self;
-            XGetWindowAttributes(display, window, &self);
-            XResizeWindow(display, use_terminal, self.width - border_size * 2, self.height - border_size * 2);
-        } else if (event.type == KeyPress){
-            KeySym sym = XLookupKeysym(&event.xkey, 0);
 
-            if (sym == XK_Shift_L){
-                // std::cout << "Pressed left shift" << std::endl;
-                shift_pressed = true;
+        if (event.xany.window == option_window){
+            if (event.type == ClientMessage){
+                if ((Atom) event.xclient.data.l[0] == wm_delete_window){
+                    XUnmapWindow(display, option_window);
+                    XDestroyWindow(display, option_window);
+                    option_window = 0;
+                }
             }
-
-            if (sym == XK_Alt_L){
-                // std::cout << "Pressed left alt" << std::endl;
-                alt_pressed = true;
+        } else if (event.xany.window == window){
+            if (event.type == Expose){
+                /* anything to do here? the child already seems to get expose events */
+            } else if (event.type == ClientMessage){
+                if ((Atom) event.xclient.data.l[0] == wm_delete_window){
+                    break;
+                }
+            } else if (event.type == ConfigureNotify){
+                XWindowAttributes self;
+                XGetWindowAttributes(display, window, &self);
+                XResizeWindow(display, use_terminal, self.width - border_size * 2, self.height - border_size * 2);
             }
+        } else if (event.xany.window == use_terminal){
+            if (event.type == KeyPress){
+                KeySym sym = XLookupKeysym(&event.xkey, 0);
 
-            if (shift_pressed && sym == XK_Tab){
-                break;
-            }
+                if (sym == XK_Shift_L){
+                    // std::cout << "Pressed left shift" << std::endl;
+                    shift_pressed = true;
+                }
 
-            if (shift_pressed && alt_pressed){
-                std::cout << "magic" << std::endl;
-            }
+                if (sym == XK_Alt_L){
+                    // std::cout << "Pressed left alt" << std::endl;
+                    alt_pressed = true;
+                }
 
-            /*
-            std::cout << "Pressed key " << sym << std::endl;
-            if (event.xkey.keycode == 0x09){
-                break;
-            }
+                if (shift_pressed && sym == XK_Tab){
+                    break;
+                }
+
+                if (shift_pressed && alt_pressed){
+                    if (option_window != 0){
+                        XRaiseWindow(display, option_window);
+                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+                    } else {
+                        std::cout << "magic" << std::endl;
+                        option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, 100, 100, 1, BlackPixel(display, screen), WhitePixel(display, screen));
+                        XMapWindow(display, option_window);
+                        XSetWMProtocols(display, option_window, &wm_delete_window, 1);
+                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+                    }
+                }
+
+                /*
+                std::cout << "Pressed key " << sym << std::endl;
+                if (event.xkey.keycode == 0x09){
+                    break;
+                }
 
 
-            */
-        } else if (event.type == KeyRelease){
-            // std::cout << "Release key" << std::endl;
-            KeySym sym = XLookupKeysym(&event.xkey, 0);
-            if (sym == XK_Shift_L){
-                shift_pressed = false;
-            }
-            if (sym == XK_Alt_L){
-                alt_pressed = false;
+                */
+            } else if (event.type == KeyRelease){
+                // std::cout << "Release key" << std::endl;
+                KeySym sym = XLookupKeysym(&event.xkey, 0);
+                if (sym == XK_Shift_L){
+                    shift_pressed = false;
+                    // std::cout << "shift " << shift_pressed << std::endl;
+                }
+                if (sym == XK_Alt_L){
+                    alt_pressed = false;
+                    // std::cout << "alt " << alt_pressed << std::endl;
+                }
             }
         }
     }
