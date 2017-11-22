@@ -6,3 +6,5 @@ left shift + left alt: bring up an options window that lets you change the windo
 left shift + right shift: end xborder, putting the child window back onto the root window
 
 ![alt "xborder example"](https://raw.githubusercontent.com/kazzmir/xborder/master/screen1.png)
+
+[video demonstration on youtube](https://www.youtube.com/watch?v=feCmLl-Up1U)
