@@ -263,6 +263,7 @@ int main(){
     int screen = DefaultScreen(display);
 
     Window child_window = find_terminal(display);
+    std::cout << "Child window " << child_window << std::endl;
 
     int child_x, child_y;
     XWindowAttributes child_attributes;
@@ -276,9 +277,9 @@ int main(){
     window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), start_color(display).pixel);
     XSelectInput(display, window,
                  ExposureMask |
+                 FocusChangeMask |
                  SubstructureNotifyMask |
                  StructureNotifyMask);
-    XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
     XMapWindow(display, window);
 
     Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
@@ -286,6 +287,7 @@ int main(){
 
     XReparentWindow(display, child_window, window, border_size, border_size);
     XMoveWindow(display, window, child_x, child_y);
+    XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
 
     bool shift_pressed = false;
     bool alt_pressed = false;
@@ -307,6 +309,13 @@ int main(){
             usleep(1000);
             continue;
         }
+
+        /*
+        Window focus;
+        int state;
+        XGetInputFocus(display, &focus, &state);
+        std::cout << "Focus state " << focus << std::endl;
+        */
 
         XEvent event;
         XNextEvent(display, &event);
@@ -375,20 +384,28 @@ int main(){
         } else if (event.xany.window == window){
             if (event.type == Expose){
                 /* anything to do here? the child already seems to get expose events */
+            } else if (event.type == FocusIn){
+                if (child_window != 0){
+                    XSetInputFocus(display, child_window, RevertToPointerRoot, CurrentTime);
+                }
             } else if (event.type == ClientMessage){
                 if ((Atom) event.xclient.data.l[0] == wm_delete_window){
                     break;
                 }
             } else if (event.type == DestroyNotify){
+                // std::cout << "Child window " << child_window << " event.event " << event.xdestroywindow.event << " event.window " << event.xdestroywindow.window << std::endl;
                 /* there is no more child to deal with */
-                child_window = 0;
-                break;
+                if (event.xdestroywindow.window == child_window){
+                    child_window = 0;
+                    break;
+                }
             } else if (event.type == ConfigureNotify){
                 XWindowAttributes self;
                 XGetWindowAttributes(display, window, &self);
                 XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
             }
         } else if (event.xany.window == child_window){
+            // std::cout << "key event in child window" << std::endl;
             if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
 
