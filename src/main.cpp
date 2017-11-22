@@ -1,5 +1,8 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include <X11/cursorfont.h>
+/* Seems overkill to use xmu just for XmuClientWindow */
+#include <X11/Xmu/WinUtil.h>
 
 #define XK_MISCELLANY
 #include <X11/keysymdef.h>
@@ -7,6 +10,37 @@
 #include <iostream>
 #include <stdlib.h>
 #include <string.h>
+
+Window find_terminal(Display * display){
+    Window root = RootWindow(display, DefaultScreen(display));
+    Window root_out;
+    int root_x, root_y;
+    int win_x, win_y;
+    unsigned int mask;
+    Window child = 0;
+    Cursor cursor;
+
+    cursor = XCreateFontCursor(display, XC_crosshair);
+
+    XGrabPointer(display, root, False, ButtonPressMask | ButtonReleaseMask, GrabModeSync, GrabModeAsync, root, cursor, CurrentTime);
+
+    std::cout << "Grabbing window" << std::endl;
+    while (1){
+        XAllowEvents(display, SyncPointer, CurrentTime);
+        XEvent event;
+        XWindowEvent(display, root, ButtonPressMask | ButtonReleaseMask, &event);
+        if (event.type == ButtonPress){
+            child = event.xbutton.subwindow;
+            break;
+        }
+    }
+
+    // XQueryPointer(display, root, &root_out, &child, &root_x, &root_y, &win_x, &win_y, &mask);
+    // std::cout << "Grabbed window " << child << std::endl;
+    XUngrabPointer(display, CurrentTime);
+    std::cout << "Grabbed window " << child << std::endl;
+    return XmuClientWindow(display, child);
+}
 
 int main(){
     Display * display;
@@ -20,7 +54,7 @@ int main(){
 
     int screen = DefaultScreen(display);
 
-    int use_terminal = 0x38eb6ea;
+    Window use_terminal = find_terminal(display);
 
     XColor yellow;
     memset(&yellow, 0, sizeof(XColor));
