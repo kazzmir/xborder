@@ -240,9 +240,27 @@ XColor start_color(Display * display){
     return create_color(display, rgb);
 }
 
+/* has to be a global so that the x_error can reach it */
+static Window window;
+
+int x_error(Display * display, XErrorEvent * event){
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), "/tmp/xborder-crash.%lu", window);
+    FILE * log = fopen(buffer, "w");
+    fprintf(log, "xborder pid %d window id %lu crashed\n", getpid(), window);
+    fprintf(log, "xerror:\n");
+    fprintf(log, "  serial: %lu\n", event->serial);
+    fprintf(log, "  error code: %c\n", event->error_code);
+    fprintf(log, "  request code: %c\n", event->request_code);
+    fprintf(log, "  minor code: %c\n", event->minor_code);
+    fprintf(log, "  resource id: %lu\n", event->resourceid);
+    fclose(log);
+    exit(1);
+    return 0;
+}
+
 int main(){
     Display * display;
-    Window window;
 
     srand(time(NULL));
 
@@ -251,6 +269,8 @@ int main(){
         std::cerr << "Cannot open display" << std::endl;
         return 1;
     }
+
+    XSetErrorHandler(x_error);
 
     std::cout << "Once a window has been selected you can press the following keys in the selected window" << std::endl;
     std::cout << "Press 'right alt + right shift' to bring up the options window" << std::endl;
