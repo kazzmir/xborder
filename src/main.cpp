@@ -11,6 +11,8 @@
 #include <string.h>
 #include <string>
 #include <math.h>
+#include <signal.h>
+#include <unistd.h>
 
 /* copied from libXmu/src/ClientWin.c */
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
@@ -167,7 +169,7 @@ float interpolate(float value, float in_range_min, float in_range_max, float out
 }
 
 const int palette_size_block = 20;
-const int palette_x = 14;
+const int palette_x = 16;
 const int palette_y = 5;
 
 rgb get_rgb(int x, int y){
@@ -218,6 +220,11 @@ void change_color(Display * display, Window window, rgb rgb){
     XClearWindow(display, window);
 }
 
+volatile bool quit_now = 0;
+void handle_signal(int signal){
+    quit_now = 1;
+}
+
 int main(){
     Display * display;
     Window window;
@@ -227,6 +234,18 @@ int main(){
         std::cerr << "Cannot open display" << std::endl;
         return 1;
     }
+
+    std::cout << "Once a window has been selected you can press the following keys in the selected window" << std::endl;
+    std::cout << "Press 'left alt + left shift' to bring up the options window" << std::endl;
+    std::cout << "Press 'left shift + tab' to close the border" << std::endl;
+    std::cout << "ctrl-c on xborder, or pressing the X window button will also stop the xborder program" << std::endl;
+
+    struct sigaction action;
+    action.sa_handler = &handle_signal;
+    action.sa_flags = SA_RESTART;
+    sigfillset(&action.sa_mask);
+    sigaction(SIGHUP, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
 
     int screen = DefaultScreen(display);
 
@@ -275,6 +294,16 @@ int main(){
     XStoreName(display, window, window_title.c_str());
 
     while (1){
+        if (quit_now){
+            std::cout << "Bye!" << std::endl;
+            break;
+        }
+
+        if (XPending(display) == 0){
+            usleep(1000);
+            continue;
+        }
+
         XEvent event;
         XNextEvent(display, &event);
 
@@ -305,6 +334,7 @@ int main(){
                     }
                 } else {
                     char * ascii = XKeysymToString(sym);
+                    /* FIXME: handle shift, ctrl-w, ctrl-u */
                     if (ascii != NULL){
                         std::string add;
                         if (std::string(ascii) == "space"){
@@ -323,8 +353,9 @@ int main(){
             }
 
             if (redraw){
-                char total[512];
-                sprintf(total, "Title: %s", window_title.c_str());
+                std::string total;
+                total += "Title: ";
+                total += window_title;
                 XGCValues values;
                 values.foreground = WhitePixel(display, screen);
                 GC local = XCreateGC(display, option_window, GCForeground, &values);
@@ -332,7 +363,7 @@ int main(){
                 get_window_dimensions(display, option_window, &width, &height);
                 // XFillRectangle(display, option_window, local, 0, 0, width, height);
                 XClearWindow(display, option_window);
-                XDrawString(display, option_window, graphics, 1, 10, total, strlen(total));
+                XDrawString(display, option_window, graphics, 1, 10, total.c_str(), total.size());
                 XFreeGC(display, local);
 
                 draw_palette(display, option_window, palette_start);
