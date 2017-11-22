@@ -386,6 +386,7 @@ int main(){
                 /* anything to do here? the child already seems to get expose events */
             } else if (event.type == FocusIn){
                 if (child_window != 0){
+                    /* FIXME: somehow the child_window can be destroyed before we get here. check that the child is a valid window? */
                     XSetInputFocus(display, child_window, RevertToPointerRoot, CurrentTime);
                 }
             } else if (event.type == ClientMessage){
