@@ -1,3 +1,7 @@
+/* xborder: shows a border around an arbitrary X window.
+ * Jon Rafkind jon@rafkind.com
+ */
+
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/cursorfont.h>
