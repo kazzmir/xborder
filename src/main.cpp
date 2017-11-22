@@ -253,7 +253,7 @@ int main(){
     }
 
     std::cout << "Once a window has been selected you can press the following keys in the selected window" << std::endl;
-    std::cout << "Press 'left alt + left shift' to bring up the options window" << std::endl;
+    std::cout << "Press 'right alt + right shift' to bring up the options window" << std::endl;
     std::cout << "Press 'left shift + right shift' to close the border" << std::endl;
     std::cout << "ctrl-c on xborder, or pressing the X window button will also stop the xborder program" << std::endl;
 
@@ -414,17 +414,17 @@ int main(){
             if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
 
-                if (sym == XK_Shift_L){
+                if (sym == XK_Shift_R){
                     // std::cout << "Pressed left shift" << std::endl;
                     shift_pressed = true;
                 }
 
-                if (sym == XK_Alt_L){
+                if (sym == XK_Alt_R){
                     // std::cout << "Pressed left alt" << std::endl;
                     alt_pressed = true;
                 }
 
-                if (shift_pressed && sym == XK_Shift_R){
+                if (shift_pressed && sym == XK_Shift_L){
                     break;
                 }
 
@@ -464,11 +464,11 @@ int main(){
             } else if (event.type == KeyRelease){
                 // std::cout << "Release key" << std::endl;
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
-                if (sym == XK_Shift_L){
+                if (sym == XK_Shift_R){
                     shift_pressed = false;
                     // std::cout << "shift " << shift_pressed << std::endl;
                 }
-                if (sym == XK_Alt_L){
+                if (sym == XK_Alt_R){
                     alt_pressed = false;
                     // std::cout << "alt " << alt_pressed << std::endl;
                 }
