@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
+#include <execinfo.h>
 
 /* copied from libXmu/src/ClientWin.c */
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
@@ -243,6 +244,12 @@ XColor start_color(Display * display){
 /* has to be a global so that the x_error can reach it */
 static Window window;
 
+static void show_backtrace(int fd){
+    void *array[100];
+    size_t size = backtrace(array, 100);
+    backtrace_symbols_fd(array, size, fd);
+}
+
 int x_error(Display * display, XErrorEvent * event){
     char buffer[256];
     snprintf(buffer, sizeof(buffer), "/tmp/xborder-crash.%lu", window);
@@ -254,6 +261,8 @@ int x_error(Display * display, XErrorEvent * event){
     fprintf(log, "  request code: %d\n", event->request_code);
     fprintf(log, "  minor code: %d\n", event->minor_code);
     fprintf(log, "  resource id: %lu\n", event->resourceid);
+    fprintf(log, "\n");
+    show_backtrace(fileno(log));
     fclose(log);
     exit(1);
     return 0;
