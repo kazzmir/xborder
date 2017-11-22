@@ -250,9 +250,9 @@ int x_error(Display * display, XErrorEvent * event){
     fprintf(log, "xborder pid %d window id %lu crashed\n", getpid(), window);
     fprintf(log, "xerror:\n");
     fprintf(log, "  serial: %lu\n", event->serial);
-    fprintf(log, "  error code: %c\n", event->error_code);
-    fprintf(log, "  request code: %c\n", event->request_code);
-    fprintf(log, "  minor code: %c\n", event->minor_code);
+    fprintf(log, "  error code: %d\n", event->error_code);
+    fprintf(log, "  request code: %d\n", event->request_code);
+    fprintf(log, "  minor code: %d\n", event->minor_code);
     fprintf(log, "  resource id: %lu\n", event->resourceid);
     fclose(log);
     exit(1);
