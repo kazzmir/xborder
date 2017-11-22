@@ -17,6 +17,7 @@
 #include <math.h>
 #include <signal.h>
 #include <unistd.h>
+#include <time.h>
 
 /* copied from libXmu/src/ClientWin.c */
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
@@ -217,7 +218,7 @@ void draw_palette(Display * display, Window window, int start_y){
     XFreeGC(display, local);
 }
 
-void change_color(Display * display, Window window, rgb rgb){
+void change_background_color(Display * display, Window window, rgb rgb){
     XSetWindowAttributes attributes;
     attributes.background_pixel = create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535).pixel;
     XChangeWindowAttributes(display, window, CWBackPixel, &attributes);
@@ -229,9 +230,17 @@ void handle_signal(int signal){
     quit_now = 1;
 }
 
+/* choose a random starting color */
+XColor start_color(Display * display){
+    rgb rgb = get_rgb(rand() % (palette_x + 1), 0);
+    return create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535);
+}
+
 int main(){
     Display * display;
     Window window;
+
+    srand(time(NULL));
 
     display = XOpenDisplay(NULL);
     if (display == NULL){
@@ -241,7 +250,7 @@ int main(){
 
     std::cout << "Once a window has been selected you can press the following keys in the selected window" << std::endl;
     std::cout << "Press 'left alt + left shift' to bring up the options window" << std::endl;
-    std::cout << "Press 'left shift + tab' to close the border" << std::endl;
+    std::cout << "Press 'left shift + right shift' to close the border" << std::endl;
     std::cout << "ctrl-c on xborder, or pressing the X window button will also stop the xborder program" << std::endl;
 
     struct sigaction action;
@@ -255,16 +264,6 @@ int main(){
 
     Window child_window = find_terminal(display);
 
-    XColor yellow;
-    memset(&yellow, 0, sizeof(XColor));
-    yellow.flags = DoRed | DoGreen | DoBlue;
-    yellow.red = 65535;
-    yellow.green = 65535;
-    yellow.blue = 0;
-    Colormap screen_colormap = DefaultColormap(display, screen);
-    int yellow_color = XAllocColor(display, screen_colormap, &yellow);
-    // std::cout << "yellow color " << yellow_color << std::endl;
-
     int child_x, child_y;
     XWindowAttributes child_attributes;
     XGetWindowAttributes(display, child_window, &child_attributes);
@@ -274,7 +273,7 @@ int main(){
 
     int border_size = 3;
 
-    window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), yellow.pixel);
+    window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), start_color(display).pixel);
     XSelectInput(display, window,
                  ExposureMask |
                  StructureNotifyMask);
@@ -327,7 +326,7 @@ int main(){
                 if (y >= palette_start && y < palette_start + (palette_y + 1) * palette_size_block &&
                     x >= 0 && x < (palette_x + 1) * palette_size_block){
 
-                    change_color(display, window, get_rgb(x / palette_size_block, (y - palette_start) / palette_size_block));
+                    change_background_color(display, window, get_rgb(x / palette_size_block, (y - palette_start) / palette_size_block));
                 }
             } else if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
@@ -398,7 +397,7 @@ int main(){
                     alt_pressed = true;
                 }
 
-                if (shift_pressed && sym == XK_Tab){
+                if (shift_pressed && sym == XK_Shift_R){
                     break;
                 }
 
