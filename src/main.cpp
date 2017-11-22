@@ -276,6 +276,7 @@ int main(){
     window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), start_color(display).pixel);
     XSelectInput(display, window,
                  ExposureMask |
+                 SubstructureNotifyMask |
                  StructureNotifyMask);
     XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
     XMapWindow(display, window);
@@ -378,6 +379,8 @@ int main(){
                 if ((Atom) event.xclient.data.l[0] == wm_delete_window){
                     break;
                 }
+            } else if (event.type == DestroyNotify){
+                break;
             } else if (event.type == ConfigureNotify){
                 XWindowAttributes self;
                 XGetWindowAttributes(display, window, &self);
