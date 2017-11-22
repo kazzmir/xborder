@@ -129,6 +129,10 @@ typedef struct {
     double b;       // ∈ [0, 1]
 } rgb;
 
+XColor create_color(Display * display, rgb rgb){
+    return create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535);
+}
+
 typedef struct {
     double h;       // ∈ [0, 360]
     double s;       // ∈ [0, 1]
@@ -203,7 +207,7 @@ void draw_palette(Display * display, Window window, int start_y){
     for (int cy = 0; cy <= palette_y; cy++){
         for (int cx = 0; cx <= palette_x; cx++){
             rgb rgb = get_rgb(cx, cy);
-            XColor color = create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535);
+            XColor color = create_color(display, rgb);
             XGCValues values;
             values.foreground = color.pixel;
             XChangeGC(display, local, GCForeground, &values);
@@ -220,7 +224,7 @@ void draw_palette(Display * display, Window window, int start_y){
 
 void change_background_color(Display * display, Window window, rgb rgb){
     XSetWindowAttributes attributes;
-    attributes.background_pixel = create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535).pixel;
+    attributes.background_pixel = create_color(display, rgb).pixel;
     XChangeWindowAttributes(display, window, CWBackPixel, &attributes);
     XClearWindow(display, window);
 }
@@ -233,7 +237,7 @@ void handle_signal(int signal){
 /* choose a random starting color */
 XColor start_color(Display * display){
     rgb rgb = get_rgb(rand() % (palette_x + 1), 0);
-    return create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535);
+    return create_color(display, rgb);
 }
 
 int main(){
