@@ -80,7 +80,7 @@ Window find_terminal(Display * display){
 
     XGrabPointer(display, root, False, ButtonPressMask | ButtonReleaseMask, GrabModeSync, GrabModeAsync, root, cursor, CurrentTime);
 
-    std::cout << "Grabbing window" << std::endl;
+    // std::cout << "Grabbing window" << std::endl;
     while (1){
         XAllowEvents(display, SyncPointer, CurrentTime);
         XEvent event;
@@ -128,6 +128,7 @@ typedef struct {
     double v;       // ∈ [0, 1]
 } hsv;
 
+/* https://stackoverflow.com/a/36209005/234139 */
 rgb hsv2rgb(hsv HSV){
     rgb RGB;
     double H = HSV.h, S = HSV.s, V = HSV.v,
@@ -158,59 +159,6 @@ rgb hsv2rgb(hsv HSV){
 
     return RGB;
 }
-
-/*
-struct RGB{
-    unsigned short r;
-    unsigned short g;
-    unsigned short b;
-};
-
-struct HSL{
-    int h;
-    float s;
-    float l;
-};
-
-float HueToRGB(float v1, float v2, float vH){
-    if (vH < 0)
-        vH += 1;
-
-    if (vH > 1)
-        vH -= 1;
-
-    if ((6 * vH) < 1)
-        return (v1 + (v2 - v1) * 6 * vH);
-
-    if ((2 * vH) < 1)
-        return v2;
-
-    if ((3 * vH) < 2)
-        return (v1 + (v2 - v1) * ((2.0f / 3) - vH) * 6);
-
-    return v1;
-}
-
-struct RGB HSLToRGB(struct HSL hsl) {
-    struct RGB rgb;
-
-    if (hsl.s == 0){
-        rgb.r = rgb.g = rgb.b = (unsigned char)(hsl.l * 65535);
-    } else {
-        float v1, v2;
-        float hue = (float)hsl.h / 360;
-
-        v2 = (hsl.l < 0.5) ? (hsl.l * (1 + hsl.s)) : ((hsl.l + hsl.s) - (hsl.l * hsl.s));
-        v1 = 2 * hsl.l - v2;
-
-        rgb.r = (unsigned short)(65535 * HueToRGB(v1, v2, hue + (1.0f / 3)));
-        rgb.g = (unsigned short)(65535 * HueToRGB(v1, v2, hue));
-        rgb.b = (unsigned short)(65535 * HueToRGB(v1, v2, hue - (1.0f / 3)));
-    }
-
-    return rgb;
-}
-*/
 
 float interpolate(float value, float in_range_min, float in_range_max, float out_range_min, float out_range_max){
     float b = (out_range_max - out_range_min);
@@ -245,15 +193,6 @@ void draw_palette(Display * display, Window window, int start_y){
     int y = start_y;
     int size = palette_size_block;
 
-    /*
-    for (int level = 0; level < 5; level++){
-        for (int hue = 0; hue < 360; hue += 30){
-            hsv hsv_;
-            hsv_.h = hue;
-            hsv_.s = 1.0;
-            hsv_.v = interpolate(level, 0, 4, 0.3, 1.0);
-            rgb rgb = hsv2rgb(hsv_);
-            */
     for (int cy = 0; cy <= palette_y; cy++){
         for (int cx = 0; cx <= palette_x; cx++){
             rgb rgb = get_rgb(cx, cy);
@@ -270,30 +209,6 @@ void draw_palette(Display * display, Window window, int start_y){
     } 
 
     XFreeGC(display, local);
-    
-    /*
-    XColor color1 = create_color(display, 65535, 0, 0);
-    XColor color2 = create_color(display, 0, 65535, 0);
-    
-    XGCValues values;
-    values.foreground = color1.pixel;
-    GC local = XCreateGC(display, window, GCForeground, &values);
-
-    int x = 0;
-    int y = start_y;
-    int size = 20;
-
-    XFillRectangle(display, window, local, x, y, size, size);
-
-    x += size;
-
-    values.foreground = color2.pixel;
-    XChangeGC(display, local, GCForeground, &values);
-    
-    XFillRectangle(display, window, local, x, y, size, size);
-
-    XFreeGC(display, local);
-    */
 }
 
 void change_color(Display * display, Window window, rgb rgb){
@@ -332,7 +247,7 @@ int main(){
     XGetWindowAttributes(display, child_window, &child_attributes);
     Window child;
     XTranslateCoordinates(display, child_window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
-    std::cout << "Window at " << child_x << ", " << child_y << std::endl;
+    // std::cout << "Window at " << child_x << ", " << child_y << std::endl;
 
     int border_size = 3;
 
@@ -457,7 +372,7 @@ int main(){
                         XRaiseWindow(display, option_window);
                         XSetInputFocus(display, window, RevertToParent, CurrentTime);
                     } else {
-                        std::cout << "magic" << std::endl;
+                        // std::cout << "magic" << std::endl;
                         option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, (palette_x + 1) * palette_size_block + 5, 20 + palette_start + (palette_y + 1) * palette_size_block, 1, BlackPixel(display, screen), WhitePixel(display, screen));
                         XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
                         XGCValues values;
