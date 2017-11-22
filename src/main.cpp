@@ -6,8 +6,10 @@
 #include <X11/keysymdef.h>
 
 #include <iostream>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 
 /* copied from libXmu/src/ClientWin.c */
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
@@ -95,6 +97,13 @@ Window find_terminal(Display * display){
     return _XmuClientWindow(display, child);
 }
 
+void get_window_dimensions(Display * display, Window window, int * width, int * height){
+    XWindowAttributes attributes;
+    XGetWindowAttributes(display, window, &attributes);
+    *width = attributes.width;
+    *height = attributes.height;
+}
+
 int main(){
     Display * display;
     Window window;
@@ -141,24 +150,66 @@ int main(){
     XReparentWindow(display, use_terminal, window, border_size, border_size);
     XMoveWindow(display, window, child_x, child_y);
 
-    XStoreName(display, window, "XBorder");
-
     bool shift_pressed = false;
     bool alt_pressed = false;
 
     Window option_window = 0;
+    std::string window_title = "XBorder";
+
+    GC graphics;
+    XStoreName(display, window, window_title.c_str());
 
     while (1){
         XEvent event;
         XNextEvent(display, &event);
 
         if (event.xany.window == option_window){
+            bool redraw = false;
             if (event.type == ClientMessage){
                 if ((Atom) event.xclient.data.l[0] == wm_delete_window){
                     XUnmapWindow(display, option_window);
                     XDestroyWindow(display, option_window);
                     option_window = 0;
                 }
+            } else if (event.type == Expose){
+                redraw = true;
+            } else if (event.type == KeyPress){
+                KeySym sym = XLookupKeysym(&event.xkey, 0);
+                if (sym == XK_BackSpace){
+                    redraw = true;
+                    if (window_title.length() > 0){
+                        window_title = window_title.substr(0, window_title.size() - 1);
+                    }
+                } else {
+                    char * ascii = XKeysymToString(sym);
+                    if (ascii != NULL){
+                        std::string add;
+                        if (std::string(ascii) == "space"){
+                            add = " ";
+                        } else if (strlen(ascii) == 1){
+                            add = ascii;
+                        }
+
+                        if (add != ""){
+                            window_title += add;
+                            redraw = true;
+                        }
+                    }
+                }
+                XStoreName(display, window, window_title.c_str());
+            }
+
+            if (redraw){
+                char total[512];
+                sprintf(total, "Title: %s", window_title.c_str());
+                XGCValues values;
+                values.foreground = WhitePixel(display, screen);
+                GC local = XCreateGC(display, option_window, GCForeground, &values);
+                int width, height;
+                get_window_dimensions(display, option_window, &width, &height);
+                XFillRectangle(display, option_window, local, 0, 0, width, height);
+                XDrawString(display, option_window, graphics, 1, 10, total, strlen(total));
+                XFreeGC(display, local);
             }
         } else if (event.xany.window == window){
             if (event.type == Expose){
@@ -197,6 +248,16 @@ int main(){
                     } else {
                         std::cout << "magic" << std::endl;
                         option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, 100, 100, 1, BlackPixel(display, screen), WhitePixel(display, screen));
+                        XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
+                        XGCValues values;
+                        // values.font = fontInfo->fid;
+                        values.foreground = BlackPixel(display, screen);
+                        graphics = XCreateGC(display, option_window, GCForeground, &values);
+                        XSelectInput(display, option_window,
+                                     ExposureMask |
+                                     KeyPress |
+                                     KeyRelease |
+                                     StructureNotifyMask);
                         XMapWindow(display, option_window);
                         XSetWMProtocols(display, option_window, &wm_delete_window, 1);
                         XSetInputFocus(display, window, RevertToParent, CurrentTime);
@@ -231,6 +292,7 @@ int main(){
     XGetWindowAttributes(display, window, &child_attributes);
     XReparentWindow(display, use_terminal, child_root, child_attributes.x, child_attributes.y);
     XTranslateCoordinates(display, window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
+    XDestroyWindow(display, window);
     XMoveWindow(display, use_terminal, child_x, child_y - border_size * 2);
     XCloseDisplay(display);
 }
