@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <math.h>
 
 /* copied from libXmu/src/ClientWin.c */
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
@@ -104,6 +105,204 @@ void get_window_dimensions(Display * display, Window window, int * width, int * 
     *height = attributes.height;
 }
 
+XColor create_color(Display * display, int red, int green, int blue){
+    XColor color;
+    color.red = red;
+    color.green = green;
+    color.blue = blue;
+    int screen = DefaultScreen(display);
+    Colormap screen_colormap = DefaultColormap(display, screen);
+    XAllocColor(display, screen_colormap, &color);
+    return color;
+}
+
+typedef struct {
+    double r;       // ∈ [0, 1]
+    double g;       // ∈ [0, 1]
+    double b;       // ∈ [0, 1]
+} rgb;
+
+typedef struct {
+    double h;       // ∈ [0, 360]
+    double s;       // ∈ [0, 1]
+    double v;       // ∈ [0, 1]
+} hsv;
+
+rgb hsv2rgb(hsv HSV){
+    rgb RGB;
+    double H = HSV.h, S = HSV.s, V = HSV.v,
+           P, Q, T,
+           fract;
+
+    (H == 360.)?(H = 0.):(H /= 60.);
+    fract = H - floor(H);
+
+    P = V*(1. - S);
+    Q = V*(1. - S*fract);
+    T = V*(1. - S*(1. - fract));
+
+    if      (0. <= H && H < 1.)
+        RGB = (rgb){.r = V, .g = T, .b = P};
+    else if (1. <= H && H < 2.)
+        RGB = (rgb){.r = Q, .g = V, .b = P};
+    else if (2. <= H && H < 3.)
+        RGB = (rgb){.r = P, .g = V, .b = T};
+    else if (3. <= H && H < 4.)
+        RGB = (rgb){.r = P, .g = Q, .b = V};
+    else if (4. <= H && H < 5.)
+        RGB = (rgb){.r = T, .g = P, .b = V};
+    else if (5. <= H && H < 6.)
+        RGB = (rgb){.r = V, .g = P, .b = Q};
+    else
+        RGB = (rgb){.r = 0., .g = 0., .b = 0.};
+
+    return RGB;
+}
+
+/*
+struct RGB{
+    unsigned short r;
+    unsigned short g;
+    unsigned short b;
+};
+
+struct HSL{
+    int h;
+    float s;
+    float l;
+};
+
+float HueToRGB(float v1, float v2, float vH){
+    if (vH < 0)
+        vH += 1;
+
+    if (vH > 1)
+        vH -= 1;
+
+    if ((6 * vH) < 1)
+        return (v1 + (v2 - v1) * 6 * vH);
+
+    if ((2 * vH) < 1)
+        return v2;
+
+    if ((3 * vH) < 2)
+        return (v1 + (v2 - v1) * ((2.0f / 3) - vH) * 6);
+
+    return v1;
+}
+
+struct RGB HSLToRGB(struct HSL hsl) {
+    struct RGB rgb;
+
+    if (hsl.s == 0){
+        rgb.r = rgb.g = rgb.b = (unsigned char)(hsl.l * 65535);
+    } else {
+        float v1, v2;
+        float hue = (float)hsl.h / 360;
+
+        v2 = (hsl.l < 0.5) ? (hsl.l * (1 + hsl.s)) : ((hsl.l + hsl.s) - (hsl.l * hsl.s));
+        v1 = 2 * hsl.l - v2;
+
+        rgb.r = (unsigned short)(65535 * HueToRGB(v1, v2, hue + (1.0f / 3)));
+        rgb.g = (unsigned short)(65535 * HueToRGB(v1, v2, hue));
+        rgb.b = (unsigned short)(65535 * HueToRGB(v1, v2, hue - (1.0f / 3)));
+    }
+
+    return rgb;
+}
+*/
+
+float interpolate(float value, float in_range_min, float in_range_max, float out_range_min, float out_range_max){
+    float b = (out_range_max - out_range_min);
+    float a = (in_range_max - in_range_min);
+    return (value - in_range_min) * b / a + out_range_min;
+}
+
+const int palette_size_block = 20;
+const int palette_x = 14;
+const int palette_y = 5;
+
+rgb get_rgb(int x, int y){
+    if (x < 0 || x > palette_x || y < 0 || y > palette_y){
+        rgb out;
+        out.r = 0;
+        out.g = 0;
+        out.b = 0;
+        return out;
+    }
+    hsv hsv;
+    hsv.h = (int) interpolate(x, 0, palette_x, 0, 360);
+    hsv.s = 1.0;
+    hsv.v = 1.2 - interpolate(y, 0, palette_y, 0.2, 1.0);
+    return hsv2rgb(hsv);
+}
+
+void draw_palette(Display * display, Window window, int start_y){
+    
+    GC local = XCreateGC(display, window, 0, NULL);
+    
+    int x = 0;
+    int y = start_y;
+    int size = palette_size_block;
+
+    /*
+    for (int level = 0; level < 5; level++){
+        for (int hue = 0; hue < 360; hue += 30){
+            hsv hsv_;
+            hsv_.h = hue;
+            hsv_.s = 1.0;
+            hsv_.v = interpolate(level, 0, 4, 0.3, 1.0);
+            rgb rgb = hsv2rgb(hsv_);
+            */
+    for (int cy = 0; cy <= palette_y; cy++){
+        for (int cx = 0; cx <= palette_x; cx++){
+            rgb rgb = get_rgb(cx, cy);
+            XColor color = create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535);
+            XGCValues values;
+            values.foreground = color.pixel;
+            XChangeGC(display, local, GCForeground, &values);
+            XFillRectangle(display, window, local, x, y, size, size);
+
+            x += size;
+        }
+        x = 0;
+        y += size;
+    } 
+
+    XFreeGC(display, local);
+    
+    /*
+    XColor color1 = create_color(display, 65535, 0, 0);
+    XColor color2 = create_color(display, 0, 65535, 0);
+    
+    XGCValues values;
+    values.foreground = color1.pixel;
+    GC local = XCreateGC(display, window, GCForeground, &values);
+
+    int x = 0;
+    int y = start_y;
+    int size = 20;
+
+    XFillRectangle(display, window, local, x, y, size, size);
+
+    x += size;
+
+    values.foreground = color2.pixel;
+    XChangeGC(display, local, GCForeground, &values);
+    
+    XFillRectangle(display, window, local, x, y, size, size);
+
+    XFreeGC(display, local);
+    */
+}
+
+void change_color(Display * display, Window window, rgb rgb){
+    XSetWindowAttributes attributes;
+    attributes.background_pixel = create_color(display, rgb.r * 65535, rgb.g * 65535, rgb.b * 65535).pixel;
+    XChangeWindowAttributes(display, window, CWBackPixel, &attributes);
+    XClearWindow(display, window);
+}
+
 int main(){
     Display * display;
     Window window;
@@ -116,7 +315,7 @@ int main(){
 
     int screen = DefaultScreen(display);
 
-    Window use_terminal = find_terminal(display);
+    Window child_window = find_terminal(display);
 
     XColor yellow;
     memset(&yellow, 0, sizeof(XColor));
@@ -130,9 +329,9 @@ int main(){
 
     int child_x, child_y;
     XWindowAttributes child_attributes;
-    XGetWindowAttributes(display, use_terminal, &child_attributes);
+    XGetWindowAttributes(display, child_window, &child_attributes);
     Window child;
-    XTranslateCoordinates(display, use_terminal, child_attributes.root, 0, 0, &child_x, &child_y, &child);
+    XTranslateCoordinates(display, child_window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
     std::cout << "Window at " << child_x << ", " << child_y << std::endl;
 
     int border_size = 3;
@@ -141,19 +340,20 @@ int main(){
     XSelectInput(display, window,
                  ExposureMask |
                  StructureNotifyMask);
-    XSelectInput(display, use_terminal, KeyPressMask | KeyReleaseMask);
+    XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
     XMapWindow(display, window);
 
     Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
     XSetWMProtocols(display, window, &wm_delete_window, 1);
 
-    XReparentWindow(display, use_terminal, window, border_size, border_size);
+    XReparentWindow(display, child_window, window, border_size, border_size);
     XMoveWindow(display, window, child_x, child_y);
 
     bool shift_pressed = false;
     bool alt_pressed = false;
 
     Window option_window = 0;
+    int palette_start = 20;
     std::string window_title = "XBorder";
 
     GC graphics;
@@ -173,6 +373,14 @@ int main(){
                 }
             } else if (event.type == Expose){
                 redraw = true;
+            } else if (event.type == ButtonPress){
+                int x = event.xbutton.x;
+                int y = event.xbutton.y;
+                if (y >= palette_start && y < palette_start + (palette_y + 1) * palette_size_block &&
+                    x >= 0 && x < (palette_x + 1) * palette_size_block){
+
+                    change_color(display, window, get_rgb(x / palette_size_block, (y - palette_start) / palette_size_block));
+                }
             } else if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
                 if (sym == XK_BackSpace){
@@ -207,9 +415,12 @@ int main(){
                 GC local = XCreateGC(display, option_window, GCForeground, &values);
                 int width, height;
                 get_window_dimensions(display, option_window, &width, &height);
-                XFillRectangle(display, option_window, local, 0, 0, width, height);
+                // XFillRectangle(display, option_window, local, 0, 0, width, height);
+                XClearWindow(display, option_window);
                 XDrawString(display, option_window, graphics, 1, 10, total, strlen(total));
                 XFreeGC(display, local);
+
+                draw_palette(display, option_window, palette_start);
             }
         } else if (event.xany.window == window){
             if (event.type == Expose){
@@ -221,9 +432,9 @@ int main(){
             } else if (event.type == ConfigureNotify){
                 XWindowAttributes self;
                 XGetWindowAttributes(display, window, &self);
-                XResizeWindow(display, use_terminal, self.width - border_size * 2, self.height - border_size * 2);
+                XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
             }
-        } else if (event.xany.window == use_terminal){
+        } else if (event.xany.window == child_window){
             if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
 
@@ -247,7 +458,7 @@ int main(){
                         XSetInputFocus(display, window, RevertToParent, CurrentTime);
                     } else {
                         std::cout << "magic" << std::endl;
-                        option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, 100, 100, 1, BlackPixel(display, screen), WhitePixel(display, screen));
+                        option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, (palette_x + 1) * palette_size_block + 5, 20 + palette_start + (palette_y + 1) * palette_size_block, 1, BlackPixel(display, screen), WhitePixel(display, screen));
                         XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
                         XGCValues values;
                         // values.font = fontInfo->fid;
@@ -257,8 +468,10 @@ int main(){
                                      ExposureMask |
                                      KeyPress |
                                      KeyRelease |
+                                     ButtonPressMask |
                                      StructureNotifyMask);
                         XMapWindow(display, option_window);
+                        XStoreName(display, option_window, "XBorder options");
                         XSetWMProtocols(display, option_window, &wm_delete_window, 1);
                         XSetInputFocus(display, window, RevertToParent, CurrentTime);
                     }
@@ -290,9 +503,9 @@ int main(){
     Window child_root = child_attributes.root;
     /* Place the window wherever the container is now */
     XGetWindowAttributes(display, window, &child_attributes);
-    XReparentWindow(display, use_terminal, child_root, child_attributes.x, child_attributes.y);
+    XReparentWindow(display, child_window, child_root, child_attributes.x, child_attributes.y);
     XTranslateCoordinates(display, window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
     XDestroyWindow(display, window);
-    XMoveWindow(display, use_terminal, child_x, child_y - border_size * 2);
+    XMoveWindow(display, child_window, child_x, child_y - border_size * 2);
     XCloseDisplay(display);
 }
