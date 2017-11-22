@@ -1,8 +1,6 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/cursorfont.h>
-/* Seems overkill to use xmu just for XmuClientWindow */
-#include <X11/Xmu/WinUtil.h>
 
 #define XK_MISCELLANY
 #include <X11/keysymdef.h>
@@ -10,6 +8,61 @@
 #include <iostream>
 #include <stdlib.h>
 #include <string.h>
+
+/* copied from libXmu/src/ClientWin.c */
+static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
+static Window _XmuClientWindow(Display *dpy, Window win){
+    Atom WM_STATE;
+    Atom type = None;
+    int format;
+    unsigned long nitems, after;
+    unsigned char *data = NULL;
+    Window inf;
+
+    WM_STATE = XInternAtom(dpy, "WM_STATE", True);
+    if (!WM_STATE)
+	return win;
+    XGetWindowProperty(dpy, win, WM_STATE, 0, 0, False, AnyPropertyType,
+		       &type, &format, &nitems, &after, &data);
+    if (data)
+	XFree(data);
+    if (type)
+	return win;
+    inf = TryChildren(dpy, win, WM_STATE);
+    if (!inf)
+	inf = win;
+    return inf;
+}
+
+static Window TryChildren(Display *dpy, Window win, Atom WM_STATE){
+    Window root, parent;
+    Window *children;
+    unsigned int nchildren;
+    unsigned int i;
+    Atom type = None;
+    int format;
+    unsigned long nitems, after;
+    unsigned char *data;
+    Window inf = 0;
+
+    if (!XQueryTree(dpy, win, &root, &parent, &children, &nchildren))
+	return 0;
+    for (i = 0; !inf && (i < nchildren); i++) {
+	data = NULL;
+	XGetWindowProperty(dpy, children[i], WM_STATE, 0, 0, False,
+			   AnyPropertyType, &type, &format, &nitems,
+			   &after, &data);
+	if (data)
+	    XFree(data);
+	if (type)
+	    inf = children[i];
+    }
+    for (i = 0; !inf && (i < nchildren); i++)
+	inf = TryChildren(dpy, children[i], WM_STATE);
+    if (children)
+	XFree(children);
+    return inf;
+}
 
 Window find_terminal(Display * display){
     Window root = RootWindow(display, DefaultScreen(display));
@@ -39,7 +92,7 @@ Window find_terminal(Display * display){
     // std::cout << "Grabbed window " << child << std::endl;
     XUngrabPointer(display, CurrentTime);
     std::cout << "Grabbed window " << child << std::endl;
-    return XmuClientWindow(display, child);
+    return _XmuClientWindow(display, child);
 }
 
 int main(){

@@ -1,7 +1,7 @@
 libs=-lX11
 
 xborder: src/main.cpp
-	clang++ $< -o $@ ${libs} `pkg-config --libs xmu`
+	clang++ $< -o $@ ${libs}
 
 clean:
 	rm xborder
