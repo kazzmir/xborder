@@ -380,6 +380,8 @@ int main(){
                     break;
                 }
             } else if (event.type == DestroyNotify){
+                /* there is no more child to deal with */
+                child_window = 0;
                 break;
             } else if (event.type == ConfigureNotify){
                 XWindowAttributes self;
@@ -452,12 +454,15 @@ int main(){
         }
     }
 
-    Window child_root = child_attributes.root;
-    /* Place the window wherever the container is now */
-    XGetWindowAttributes(display, window, &child_attributes);
-    XReparentWindow(display, child_window, child_root, child_attributes.x, child_attributes.y);
-    XTranslateCoordinates(display, window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
+    if (child_window != 0){
+        Window child_root = child_attributes.root;
+        /* Place the window wherever the container is now */
+        XGetWindowAttributes(display, window, &child_attributes);
+        XReparentWindow(display, child_window, child_root, child_attributes.x, child_attributes.y);
+        XTranslateCoordinates(display, window, child_attributes.root, 0, 0, &child_x, &child_y, &child);
+        XMoveWindow(display, child_window, child_x, child_y - border_size * 2);
+    }
+
     XDestroyWindow(display, window);
-    XMoveWindow(display, child_window, child_x, child_y - border_size * 2);
     XCloseDisplay(display);
 }
