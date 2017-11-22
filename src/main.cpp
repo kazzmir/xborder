@@ -259,6 +259,19 @@ int x_error(Display * display, XErrorEvent * event){
     return 0;
 }
 
+std::string get_window_title(Display * display, Window window){
+    char* buffer = NULL;
+    if (XFetchName(display, window, &buffer) != 0){
+        if (buffer != NULL){
+            std::string out = buffer;
+            XFree(buffer);
+            return out;
+        }
+    }
+
+    return "XBorder";
+}
+
 int main(){
     Display * display;
 
@@ -318,7 +331,7 @@ int main(){
 
     Window option_window = 0;
     int palette_start = 20;
-    std::string window_title = "XBorder";
+    std::string window_title = get_window_title(display, child_window);
 
     GC graphics;
     XStoreName(display, window, window_title.c_str());
