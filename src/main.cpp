@@ -252,8 +252,8 @@ static void show_backtrace(int fd){
 
 int x_error(Display * display, XErrorEvent * event){
     char buffer[256];
-    snprintf(buffer, sizeof(buffer), "/tmp/xborder-crash.%lu", window);
-    FILE * log = fopen(buffer, "w");
+    snprintf(buffer, sizeof(buffer), "/tmp/xborder-error.%lu", window);
+    FILE * log = fopen(buffer, "a");
     fprintf(log, "xborder pid %d window id %lu crashed\n", getpid(), window);
     fprintf(log, "xerror:\n");
     fprintf(log, "  serial: %lu\n", event->serial);
@@ -264,7 +264,7 @@ int x_error(Display * display, XErrorEvent * event){
     fprintf(log, "\n");
     show_backtrace(fileno(log));
     fclose(log);
-    exit(1);
+    // exit(1);
     return 0;
 }
 
