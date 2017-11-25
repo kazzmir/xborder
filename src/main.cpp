@@ -20,6 +20,8 @@
 #include <time.h>
 #include <execinfo.h>
 
+#define xdebug(str, value) printf(str, value)
+
 /* copied from libXmu/src/ClientWin.c */
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
 static Window _XmuClientWindow(Display *dpy, Window win){
@@ -32,16 +34,16 @@ static Window _XmuClientWindow(Display *dpy, Window win){
 
     WM_STATE = XInternAtom(dpy, "WM_STATE", True);
     if (!WM_STATE)
-	return win;
+        return win;
     XGetWindowProperty(dpy, win, WM_STATE, 0, 0, False, AnyPropertyType,
-		       &type, &format, &nitems, &after, &data);
+            &type, &format, &nitems, &after, &data);
     if (data)
-	XFree(data);
+        XFree(data);
     if (type)
-	return win;
+        return win;
     inf = TryChildren(dpy, win, WM_STATE);
     if (!inf)
-	inf = win;
+        inf = win;
     return inf;
 }
 
@@ -57,21 +59,21 @@ static Window TryChildren(Display *dpy, Window win, Atom WM_STATE){
     Window inf = 0;
 
     if (!XQueryTree(dpy, win, &root, &parent, &children, &nchildren))
-	return 0;
+        return 0;
     for (i = 0; !inf && (i < nchildren); i++) {
-	data = NULL;
-	XGetWindowProperty(dpy, children[i], WM_STATE, 0, 0, False,
-			   AnyPropertyType, &type, &format, &nitems,
-			   &after, &data);
-	if (data)
-	    XFree(data);
-	if (type)
-	    inf = children[i];
+        data = NULL;
+        XGetWindowProperty(dpy, children[i], WM_STATE, 0, 0, False,
+                AnyPropertyType, &type, &format, &nitems,
+                &after, &data);
+        if (data)
+            XFree(data);
+        if (type)
+            inf = children[i];
     }
     for (i = 0; !inf && (i < nchildren); i++)
-	inf = TryChildren(dpy, children[i], WM_STATE);
+        inf = TryChildren(dpy, children[i], WM_STATE);
     if (children)
-	XFree(children);
+        XFree(children);
     return inf;
 }
 
@@ -257,7 +259,9 @@ int x_error(Display * display, XErrorEvent * event){
     fprintf(log, "xborder pid %d window id %lu crashed\n", getpid(), window);
     fprintf(log, "xerror:\n");
     fprintf(log, "  serial: %lu\n", event->serial);
-    fprintf(log, "  error code: %d\n", event->error_code);
+    char error_string[256];
+    XGetErrorText(display, event->error_code, error_string, sizeof(error_string));
+    fprintf(log, "  error code: %s\n", error_string);
     fprintf(log, "  request code: %d\n", event->request_code);
     fprintf(log, "  minor code: %d\n", event->minor_code);
     fprintf(log, "  resource id: %lu\n", event->resourceid);
@@ -279,6 +283,60 @@ std::string get_window_title(Display * display, Window window){
     }
 
     return "XBorder";
+}
+
+void delete_properties(Display * display, Window window){
+    int count = 0;
+    Atom * atoms = XListProperties(display, window, &count);
+    for (int i = 0; i < count; i++){
+        const Atom & atom = atoms[i];
+        char * name = XGetAtomName(display, atom);
+		std::string sname = name;
+
+
+        bool destroy = true;
+		if (sname == "XKLAVIER_STATE" ||
+			sname == "_NET_WM_STATE" ||
+			sname == "_NET_FRAME_EXTENTS" ||
+			sname == "_NET_WM_DESKTOP" ||
+			sname == "WM_NAME"){
+            destroy = false;
+        }
+
+        if (destroy){
+            std::cout << "Delete property '" << name << "'" << std::endl;
+        }
+        XFree(name);
+
+        if (destroy){
+            XDeleteProperty(display, window, atom);
+        }
+    }
+    XFree(atoms);
+}
+
+Window get_root_window(Display * display, Window window){
+    XWindowAttributes attributes;
+    XGetWindowAttributes(display, window, &attributes);
+    return attributes.root;
+}
+
+void set_override_redirect(Display * display, Window window, bool value){
+    XSetWindowAttributes attributes;
+    attributes.override_redirect = value;
+    XChangeWindowAttributes(display, window, CWOverrideRedirect, &attributes);
+}
+    
+Window get_parent_window(Display * display, Window window){
+    Window root = 0;
+    Window parent = 0;
+    Window* children = NULL;
+    unsigned int count = 0;
+    XQueryTree(display, window, &root, &parent, &children, &count);
+    if (children != NULL){
+        XFree(children);
+    }
+    return parent;
 }
 
 int main(){
@@ -320,20 +378,30 @@ int main(){
 
     int border_size = 3;
 
-    window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, child_attributes.width + border_size * 2, child_attributes.height + border_size * 2, 1, BlackPixel(display, screen), start_color(display).pixel);
+	int use_width = child_attributes.width + border_size * 2;
+	int use_height = child_attributes.height + border_size * 2;
+    window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, use_width, use_height, 1, BlackPixel(display, screen), start_color(display).pixel);
     XSelectInput(display, window,
                  ExposureMask |
                  FocusChangeMask |
                  SubstructureNotifyMask |
                  StructureNotifyMask);
+    std::cout << "Xborder window " << window << std::endl;
     XMapWindow(display, window);
 
     Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
     XSetWMProtocols(display, window, &wm_delete_window, 1);
 
-    XReparentWindow(display, child_window, window, border_size, border_size);
-    XMoveWindow(display, window, child_x, child_y);
+    // delete_properties(display, child_window);
+    set_override_redirect(display, child_window, true);
+
+    std::cout << "Child root window " << get_root_window(display, child_window) << std::endl;
+    std::cout << "Child parent window " << get_parent_window(display, child_window) << std::endl;
+    xdebug("XReparentWindow: %d\n", XReparentWindow(display, child_window, window, border_size, border_size));
+    std::cout << "Child root window after reparent " << get_root_window(display, child_window) << std::endl;
+    std::cout << "Child parent window after reparent " << get_parent_window(display, child_window) << std::endl;
     XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
+    XMoveWindow(display, window, child_x, child_y);
 
     bool shift_pressed = false;
     bool alt_pressed = false;
@@ -350,6 +418,10 @@ int main(){
             std::cout << "Bye!" << std::endl;
             break;
         }
+
+		if (get_parent_window(display, child_window) != window){
+			XReparentWindow(display, child_window, window, border_size, border_size);
+		}
 
         if (XPending(display) == 0){
             usleep(1000);
@@ -452,7 +524,7 @@ int main(){
                 XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
             }
         } else if (event.xany.window == child_window){
-            // std::cout << "key event in child window" << std::endl;
+            std::cout << "event in child window " << event.xany.type << std::endl;
             if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
 
@@ -519,6 +591,7 @@ int main(){
     }
 
     if (child_window != 0){
+        set_override_redirect(display, child_window, false);
         Window child_root = child_attributes.root;
         /* Place the window wherever the container is now */
         XGetWindowAttributes(display, window, &child_attributes);
