@@ -413,6 +413,9 @@ int main(){
     GC graphics;
     XStoreName(display, window, window_title.c_str());
 
+	int old_width = 0;
+	int old_height = 0;
+
     while (1){
         if (quit_now){
             std::cout << "Bye!" << std::endl;
@@ -521,7 +524,20 @@ int main(){
             } else if (event.type == ConfigureNotify){
                 XWindowAttributes self;
                 XGetWindowAttributes(display, window, &self);
-                XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
+				int width = self.width - border_size * 2;
+				int height = self.height - border_size * 2;
+				if (width != old_width || height != old_height){
+					old_width = width;
+					old_height = height;
+					XResizeWindow(display, child_window, width, height);
+					// XRaiseWindow(display, child_window);
+					/* For some reason in cinnamon the child window doesn't resize itself
+					 * But using unmap/map causes a flicker effect.
+					 */
+					XUnmapWindow(display, child_window);
+					XMapWindow(display, child_window);
+					// std::cout << "Resize child window to " << width << " " << height << std::endl;
+				}
             }
         } else if (event.xany.window == child_window){
             std::cout << "event in child window " << event.xany.type << std::endl;
@@ -587,7 +603,7 @@ int main(){
                     // std::cout << "alt " << alt_pressed << std::endl;
                 }
             }
-        }
+		}
     }
 
     if (child_window != 0){
