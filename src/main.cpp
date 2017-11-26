@@ -105,6 +105,9 @@ Window find_terminal(Display * display){
     // std::cout << "Grabbed window " << child << std::endl;
     XUngrabPointer(display, CurrentTime);
     std::cout << "Grabbed window " << child << std::endl;
+	if (child == root){
+		return 0;
+	}
     return _XmuClientWindow(display, child);
 }
 
@@ -367,6 +370,10 @@ int main(){
     int screen = DefaultScreen(display);
 
     Window child_window = find_terminal(display);
+	if (child_window == RootWindow(display, screen) || child_window == 0){
+		std::cout << "Invalid window chosen" << std::endl;
+		return 1;
+	}
     std::cout << "Child window " << child_window << std::endl;
 
     int child_x, child_y;
