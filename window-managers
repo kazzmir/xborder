@@ -1,0 +1,15 @@
+raw X: yes
+xfce: yes
+twm: yes
+cinnamon: yes
+icewm: yes
+fvwm: yes
+i3: no
+sawfish: kinda
+fluxbox: yes
+afterstep: yes
+enlightenment: no, child window dissappears
+metacity: no, border decorations missing
+blackbox: no, child window dissapears
+mwm: yes
+window maker: no
