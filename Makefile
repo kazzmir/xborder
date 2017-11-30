@@ -1,7 +1,9 @@
 libs=-lX11
 
+CXX=clang++
+
 xborder: src/main.cpp
-	clang++ $< -o $@ ${libs}
+	${CXX} -g3 $< -o $@ ${libs}
 
 clean:
 	rm xborder
