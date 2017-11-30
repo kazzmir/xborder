@@ -18,7 +18,9 @@
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>
 #include <execinfo.h>
+#include <stdint.h>
 
 #define xdebug(str, value) printf(str, value)
 
@@ -184,6 +186,14 @@ const int palette_size_block = 20;
 const int palette_x = 16;
 const int palette_y = 5;
 
+rgb get_rgb(int h, float s, float v){
+    hsv hsv;
+    hsv.h = h;
+    hsv.s = s;
+    hsv.v = v;
+    return hsv2rgb(hsv);
+}
+
 rgb get_rgb(int x, int y){
     if (x < 0 || x > palette_x || y < 0 || y > palette_y){
         rgb out;
@@ -197,6 +207,16 @@ rgb get_rgb(int x, int y){
     hsv.s = 1.0;
     hsv.v = 1.2 - interpolate(y, 0, palette_y, 0.2, 1.0);
     return hsv2rgb(hsv);
+}
+
+/* time in milliseconds */
+uint64_t time_now(){
+    struct timeval time;
+    if (gettimeofday(&time, NULL) == 0){
+        return time.tv_sec * 1000 + time.tv_usec / 1000;
+    }
+
+    return 0;
 }
 
 void draw_palette(Display * display, Window window, int start_y){
@@ -339,15 +359,26 @@ Window get_parent_window(Display * display, Window window){
     return parent;
 }
 
-int main(){
+int main(int argc, char ** argv){
     Display * display;
-
-    srand(time(NULL));
 
     display = XOpenDisplay(NULL);
     if (display == NULL){
         std::cerr << "Cannot open display" << std::endl;
         return 1;
+    }
+
+    srand(time(NULL));
+
+    bool glow = false;
+
+    for (int i = 1; i < argc; i++){
+        std::string arg(argv[i]);
+        if (arg == "glow" ||
+            arg == "-glow" ||
+            arg == "--glow"){
+            glow = true;
+        }
     }
 
     XSetErrorHandler(x_error);
@@ -413,10 +444,26 @@ int main(){
     GC graphics;
     XStoreName(display, window, window_title.c_str());
 
+    uint64_t glow_start = time_now();
+    int glow_color = rand() % 360;
+    int glow_speed = 50;
+
     while (1){
         if (quit_now){
             std::cout << "Bye!" << std::endl;
             break;
+        }
+
+        /* TODO: move all the glow code into an object */
+        if (glow){
+            uint64_t check = time_now();
+            int move = (check - glow_start) / glow_speed;
+            if (move > 0){
+                glow_color = (glow_color + move) % 360;
+                rgb next_color = get_rgb(glow_color, 1.0, 1.0);
+                change_background_color(display, window, next_color);
+                glow_start += move * glow_speed;
+            }
         }
 
         if (get_parent_window(display, child_window) != window){
@@ -524,7 +571,7 @@ int main(){
                 XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
             }
         } else if (event.xany.window == child_window){
-            std::cout << "event in child window " << event.xany.type << std::endl;
+            // std::cout << "event in child window " << event.xany.type << std::endl;
             if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
 
