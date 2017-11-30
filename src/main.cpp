@@ -433,11 +433,14 @@ int main(int argc, char ** argv){
     // delete_properties(display, child_window);
     set_override_redirect(display, child_window, true);
 
+    XReparentWindow(display, child_window, window, border_size, border_size);
+    /*
     std::cout << "Child root window " << get_root_window(display, child_window) << std::endl;
     std::cout << "Child parent window " << get_parent_window(display, child_window) << std::endl;
     // xdebug("XReparentWindow: %d\n", XReparentWindow(display, child_window, window, border_size, border_size));
     std::cout << "Child root window after reparent " << get_root_window(display, child_window) << std::endl;
     std::cout << "Child parent window after reparent " << get_parent_window(display, child_window) << std::endl;
+    */
     XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
     XMoveWindow(display, window, child_x, child_y);
 
