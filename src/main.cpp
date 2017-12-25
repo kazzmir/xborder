@@ -25,30 +25,6 @@
 #define xdebug(str, value) printf(str, value)
 
 /* copied from libXmu/src/ClientWin.c */
-static Window TryChildren(Display *dpy, Window win, Atom WM_STATE);
-static Window _XmuClientWindow(Display *dpy, Window win){
-    Atom WM_STATE;
-    Atom type = None;
-    int format;
-    unsigned long nitems, after;
-    unsigned char *data = NULL;
-    Window inf;
-
-    WM_STATE = XInternAtom(dpy, "WM_STATE", True);
-    if (!WM_STATE)
-        return win;
-    XGetWindowProperty(dpy, win, WM_STATE, 0, 0, False, AnyPropertyType,
-            &type, &format, &nitems, &after, &data);
-    if (data)
-        XFree(data);
-    if (type)
-        return win;
-    inf = TryChildren(dpy, win, WM_STATE);
-    if (!inf)
-        inf = win;
-    return inf;
-}
-
 static Window TryChildren(Display *dpy, Window win, Atom WM_STATE){
     Window root, parent;
     Window *children;
@@ -79,7 +55,36 @@ static Window TryChildren(Display *dpy, Window win, Atom WM_STATE){
     return inf;
 }
 
-Window find_terminal(Display * display){
+static Window find_window_by_atom(Display *dpy, Window win, Atom atom){
+    Atom type = None;
+    int format;
+    unsigned long nitems, after;
+    unsigned char *data = NULL;
+    Window inf;
+
+    // std::cout << "Find window with atom " << XGetAtomName(dpy, atom) << std::endl;
+    XGetWindowProperty(dpy, win, atom, 0, 0, False, AnyPropertyType,
+            &type, &format, &nitems, &after, &data);
+    if (data)
+        XFree(data);
+    if (type)
+        return win;
+    inf = TryChildren(dpy, win, atom);
+    if (!inf)
+        inf = win;
+    return inf;
+}
+
+static Window _XmuClientWindow(Display *dpy, Window win){
+    Atom WM_STATE;
+
+    WM_STATE = XInternAtom(dpy, "WM_STATE", True);
+    if (!WM_STATE)
+        return win;
+    return find_window_by_atom(dpy, win, WM_STATE);
+}
+
+Window choose_window(Display * display){
     Window root = RootWindow(display, DefaultScreen(display));
     Window root_out;
     int root_x, root_y;
@@ -110,6 +115,30 @@ Window find_terminal(Display * display){
     if (child == root){
         return 0;
     }
+
+    return child;
+}
+
+Window find_xborder_window(Display * display){
+    Window chosen = choose_window(display);
+    if (chosen == 0){
+        std::cout << "Error: Window could not be selected, or root window chosen" << std::endl;
+        return 0;
+    }
+    Atom xborder = XInternAtom(display, "xborder", false);
+    Window xborder_window = find_window_by_atom(display, chosen, xborder);
+    if (xborder_window == 0){
+        std::cout << "Error: Selected window is not an xborder: " << chosen << std::endl;
+        return 0;
+    }
+    return xborder_window;
+}
+
+Window find_terminal(Display * display){
+    Window child = choose_window(display);
+    if (child == 0){
+        return 0;
+    }
     return _XmuClientWindow(display, child);
 }
 
@@ -119,6 +148,10 @@ void get_window_dimensions(Display * display, Window window, int * width, int * 
     *width = attributes.width;
     *height = attributes.height;
 }
+
+enum XBorderMessage{
+    XBorderConfigure
+};
 
 XColor create_color(Display * display, int red, int green, int blue){
     XColor color;
@@ -362,27 +395,22 @@ Window get_parent_window(Display * display, Window window){
     return parent;
 }
 
-int main(int argc, char ** argv){
+void set_xborder_window(Display * display, Window window){
+    Atom xborder = XInternAtom(display, "xborder", false);
+    unsigned char * c = (unsigned char*) "a";
+    XChangeProperty(display, window, xborder, XA_STRING, 8, PropModeReplace, (unsigned char*) c, 1);
+}
+
+void run_xborder(bool glow){
     Display * display;
 
     display = XOpenDisplay(NULL);
     if (display == NULL){
         std::cerr << "Cannot open display" << std::endl;
-        return 1;
+        return;
     }
 
     srand(time(NULL));
-
-    bool glow = false;
-
-    for (int i = 1; i < argc; i++){
-        std::string arg(argv[i]);
-        if (arg == "glow" ||
-            arg == "-glow" ||
-            arg == "--glow"){
-            glow = true;
-        }
-    }
 
     XSetErrorHandler(x_error);
 
@@ -403,7 +431,7 @@ int main(int argc, char ** argv){
     Window child_window = find_terminal(display);
     if (child_window == RootWindow(display, screen) || child_window == 0){
         std::cout << "Invalid window chosen" << std::endl;
-        return 1;
+        return;
     }
     std::cout << "Child window " << child_window << std::endl;
 
@@ -419,6 +447,9 @@ int main(int argc, char ** argv){
     int use_width = child_attributes.width + border_size * 2;
     int use_height = child_attributes.height + border_size * 2;
     window = XCreateSimpleWindow(display, RootWindow(display, screen), child_x, child_y, use_width, use_height, 1, BlackPixel(display, screen), start_color(display).pixel);
+
+    set_xborder_window(display, window);
+
     XSelectInput(display, window,
                  ExposureMask |
                  FocusChangeMask |
@@ -444,6 +475,8 @@ int main(int argc, char ** argv){
     XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
     XMoveWindow(display, window, child_x, child_y);
 
+    Atom wm_protocols_atom = XInternAtom(display, "WM_PROTOCOLS", true);
+
     bool shift_pressed = false;
     bool alt_pressed = false;
 
@@ -457,6 +490,8 @@ int main(int argc, char ** argv){
     uint64_t glow_start = time_now();
     int glow_color = rand() % 360;
     int glow_speed = 50;
+    
+    Atom xborder_atom = XInternAtom(display, "xborder", false);
 
     while (1){
         if (quit_now){
@@ -495,10 +530,19 @@ int main(int argc, char ** argv){
         XEvent event;
         XNextEvent(display, &event);
 
+        /*
+        if (event.type == ClientMessage){
+            std::cout << "Top level event client message" << std::endl;
+            std::cout << "Destined for window: " << event.xany.window << std::endl;
+            std::cout << "Type: " << XGetAtomName(display, event.xclient.message_type) << std::endl;
+        }
+        */
+
         if (event.xany.window == option_window){
             bool redraw = false;
             if (event.type == ClientMessage){
-                if ((Atom) event.xclient.data.l[0] == wm_delete_window){
+                if (event.xclient.message_type == wm_protocols_atom &&
+                    (Atom) event.xclient.data.l[0] == wm_delete_window){
                     XUnmapWindow(display, option_window);
                     XDestroyWindow(display, option_window);
                     option_window = 0;
@@ -565,7 +609,38 @@ int main(int argc, char ** argv){
                     XSetInputFocus(display, child_window, RevertToPointerRoot, CurrentTime);
                 }
             } else if (event.type == ClientMessage){
-                if ((Atom) event.xclient.data.l[0] == wm_delete_window){
+                XClientMessageEvent * client = &event.xclient;
+
+                // std::cout << "Got client message: " << XGetAtomName(display, client->message_type) << std::endl;
+
+                if (client->message_type == xborder_atom &&
+                    client->data.b[0] == XBorderConfigure){
+                    std::cout << "Reconfigure xborder" << std::endl;
+
+                    if (option_window != 0){
+                        XRaiseWindow(display, option_window);
+                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+                    } else {
+                        // std::cout << "magic" << std::endl;
+                        option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, (palette_x + 1) * palette_size_block + 5, 20 + palette_start + (palette_y + 1) * palette_size_block, 1, BlackPixel(display, screen), WhitePixel(display, screen));
+                        XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
+                        XGCValues values;
+                        // values.font = fontInfo->fid;
+                        values.foreground = BlackPixel(display, screen);
+                        graphics = XCreateGC(display, option_window, GCForeground, &values);
+                        XSelectInput(display, option_window,
+                                     ExposureMask |
+                                     KeyPress |
+                                     KeyRelease |
+                                     ButtonPressMask |
+                                     StructureNotifyMask);
+                        XMapWindow(display, option_window);
+                        XStoreName(display, option_window, "XBorder options");
+                        XSetWMProtocols(display, option_window, &wm_delete_window, 1);
+                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+                    }
+                } else if (client->message_type == wm_protocols_atom &&
+                           (Atom) client->data.l[0] == wm_delete_window){
                     break;
                 }
             } else if (event.type == DestroyNotify){
@@ -580,7 +655,10 @@ int main(int argc, char ** argv){
                 XGetWindowAttributes(display, window, &self);
                 XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
             }
-        } else if (event.xany.window == child_window){
+        }
+
+#if 0
+        else if (event.xany.window == child_window){
             // std::cout << "event in child window " << event.xany.type << std::endl;
             if (event.type == KeyPress){
                 KeySym sym = XLookupKeysym(&event.xkey, 0);
@@ -645,6 +723,7 @@ int main(int argc, char ** argv){
                 }
             }
         }
+#endif
     }
 
     if (child_window != 0){
@@ -659,4 +738,57 @@ int main(int argc, char ** argv){
 
     XDestroyWindow(display, window);
     XCloseDisplay(display);
+}
+
+void do_configure_xborder(){
+    Display * display;
+
+    display = XOpenDisplay(NULL);
+    if (display == NULL){
+        std::cerr << "Cannot open display" << std::endl;
+        return;
+    }
+
+    Window chosen = find_xborder_window(display);
+    if (chosen == 0){
+        XCloseDisplay(display);
+        return;
+    }
+
+    // std::cout << "Send event to window " << chosen << std::endl;
+
+    Atom xborder_configure = XInternAtom(display, "xborder", false);
+
+    XEvent event;
+    XClientMessageEvent * client = &event.xclient;
+    event.type = ClientMessage;
+    client->message_type = xborder_configure;
+    client->format = 8;
+    client->window = chosen;
+    client->data.b[0] = XBorderConfigure;
+
+    if (XSendEvent(display, chosen, 0, 0, &event) != 0){
+        std::cout << "Reconfigured xborder window " << chosen << std::endl;
+    } else {
+        std::cout << "Could not send an event" << std::endl;
+    }
+    XCloseDisplay(display);
+}
+
+int main(int argc, char ** argv){
+    bool glow = false;
+
+    for (int i = 1; i < argc; i++){
+        std::string arg(argv[i]);
+        if (arg == "glow" ||
+            arg == "-glow" ||
+            arg == "--glow"){
+            glow = true;
+        } else if (arg == "configure"){
+            do_configure_xborder();
+            return 0;
+        }
+    }
+
+    run_xborder(glow);
 }
