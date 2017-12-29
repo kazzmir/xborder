@@ -494,23 +494,27 @@ public:
             }
 
             if (redraw){
-                std::string total;
-                total += "Title: ";
-                total += window_title;
-                XGCValues values;
-                int screen = DefaultScreen(display);
-                values.foreground = WhitePixel(display, screen);
-                GC local = XCreateGC(display, window, GCForeground, &values);
-                int width, height;
-                get_window_dimensions(display, window, &width, &height);
-                // XFillRectangle(display, option_window, local, 0, 0, width, height);
-                XClearWindow(display, window);
-                XDrawString(display, window, graphics, 1, 10, total.c_str(), total.size());
-                XFreeGC(display, local);
-
-                draw_palette(display, window, palette_start);
+                draw();
             }
         }
+    }
+
+    void draw(){
+        std::string total;
+        total += "Title: ";
+        total += window_title;
+        XGCValues values;
+        int screen = DefaultScreen(display);
+        values.foreground = WhitePixel(display, screen);
+        GC local = XCreateGC(display, window, GCForeground, &values);
+        int width, height;
+        get_window_dimensions(display, window, &width, &height);
+        // XFillRectangle(display, option_window, local, 0, 0, width, height);
+        XClearWindow(display, window);
+        XDrawString(display, window, graphics, 1, 10, total.c_str(), total.size());
+        XFreeGC(display, local);
+
+        draw_palette(display, window, palette_start);
     }
 
     static OptionWindow* create(Display * display, Window xborder_window){
