@@ -484,7 +484,7 @@ void run_xborder(bool glow){
     int palette_start = 20;
     std::string window_title = get_window_title(display, child_window);
 
-    GC graphics;
+    GC graphics = NULL;
     XStoreName(display, window, window_title.c_str());
 
     uint64_t glow_start = time_now();
@@ -543,6 +543,8 @@ void run_xborder(bool glow){
             if (event.type == ClientMessage){
                 if (event.xclient.message_type == wm_protocols_atom &&
                     (Atom) event.xclient.data.l[0] == wm_delete_window){
+                    XFreeGC(display, graphics);
+                    graphics = NULL;
                     XUnmapWindow(display, option_window);
                     XDestroyWindow(display, option_window);
                     option_window = 0;
@@ -656,74 +658,14 @@ void run_xborder(bool glow){
                 XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
             }
         }
+    }
 
-#if 0
-        else if (event.xany.window == child_window){
-            // std::cout << "event in child window " << event.xany.type << std::endl;
-            if (event.type == KeyPress){
-                KeySym sym = XLookupKeysym(&event.xkey, 0);
-
-                if (sym == XK_Shift_R){
-                    // std::cout << "Pressed left shift" << std::endl;
-                    shift_pressed = true;
-                }
-
-                if (sym == XK_Alt_R){
-                    // std::cout << "Pressed left alt" << std::endl;
-                    alt_pressed = true;
-                }
-
-                if (shift_pressed && sym == XK_Shift_L){
-                    break;
-                }
-
-                if (shift_pressed && alt_pressed){
-                    if (option_window != 0){
-                        XRaiseWindow(display, option_window);
-                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
-                    } else {
-                        // std::cout << "magic" << std::endl;
-                        option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, (palette_x + 1) * palette_size_block + 5, 20 + palette_start + (palette_y + 1) * palette_size_block, 1, BlackPixel(display, screen), WhitePixel(display, screen));
-                        XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
-                        XGCValues values;
-                        // values.font = fontInfo->fid;
-                        values.foreground = BlackPixel(display, screen);
-                        graphics = XCreateGC(display, option_window, GCForeground, &values);
-                        XSelectInput(display, option_window,
-                                     ExposureMask |
-                                     KeyPress |
-                                     KeyRelease |
-                                     ButtonPressMask |
-                                     StructureNotifyMask);
-                        XMapWindow(display, option_window);
-                        XStoreName(display, option_window, "XBorder options");
-                        XSetWMProtocols(display, option_window, &wm_delete_window, 1);
-                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
-                    }
-                }
-
-                /*
-                std::cout << "Pressed key " << sym << std::endl;
-                if (event.xkey.keycode == 0x09){
-                    break;
-                }
-
-
-                */
-            } else if (event.type == KeyRelease){
-                // std::cout << "Release key" << std::endl;
-                KeySym sym = XLookupKeysym(&event.xkey, 0);
-                if (sym == XK_Shift_R){
-                    shift_pressed = false;
-                    // std::cout << "shift " << shift_pressed << std::endl;
-                }
-                if (sym == XK_Alt_R){
-                    alt_pressed = false;
-                    // std::cout << "alt " << alt_pressed << std::endl;
-                }
-            }
-        }
-#endif
+    if (option_window != 0){
+        XFreeGC(display, graphics);
+        graphics = NULL;
+        XUnmapWindow(display, option_window);
+        XDestroyWindow(display, option_window);
+        option_window = 0;
     }
 
     if (child_window != 0){
