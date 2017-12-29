@@ -401,6 +401,152 @@ void set_xborder_window(Display * display, Window window){
     XChangeProperty(display, window, xborder, XA_STRING, 8, PropModeReplace, (unsigned char*) c, 1);
 }
 
+class OptionWindow {
+public:
+    const Window window;
+    const Window xborder_window;
+    GC const graphics;
+    Display * const display;
+    bool destroy;
+    std::string window_title;
+    static const int palette_start = 20;
+
+    OptionWindow(Display * display, Window window, GC graphics, Window xborder_window):
+    window(window),
+    xborder_window(xborder_window),
+    graphics(graphics),
+    display(display),
+    destroy(false){
+        window_title = get_window_title(display, xborder_window);
+    }
+
+    void raise(){
+        XRaiseWindow(display, window);
+    }
+
+    bool isDead(){
+        return this->destroy;
+    }
+
+    void handleEvent(XEvent * event){
+        if (event->xany.window == this->window){
+            bool redraw = false;
+            switch (event->type){
+                case ClientMessage: {
+                    Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
+                    Atom wm_protocols_atom = XInternAtom(display, "WM_PROTOCOLS", true);
+
+                    if (event->xclient.message_type == wm_protocols_atom &&
+                        (Atom) event->xclient.data.l[0] == wm_delete_window){
+
+                        destroy = true;
+                        /*
+                        XFreeGC(display, graphics);
+                        graphics = NULL;
+                        XUnmapWindow(display, option_window);
+                        XDestroyWindow(display, option_window);
+                        option_window = 0;
+                        */
+                    }
+                    break;
+                }
+                case Expose: {
+                    redraw = true;
+                    break;
+                }
+                case ButtonPress: {
+                    int x = event->xbutton.x;
+                    int y = event->xbutton.y;
+                    if (y >= palette_start && y < palette_start + (palette_y + 1) * palette_size_block &&
+                        x >= 0 && x < (palette_x + 1) * palette_size_block){
+
+                        change_background_color(display, xborder_window, get_rgb(x / palette_size_block, (y - palette_start) / palette_size_block));
+                    }
+                    break;
+                }
+                case KeyPress: {
+                    KeySym sym = XLookupKeysym(&event->xkey, 0);
+                    if (sym == XK_BackSpace){
+                        redraw = true;
+                        if (window_title.length() > 0){
+                            window_title = window_title.substr(0, window_title.size() - 1);
+                        }
+                    } else {
+                        char * ascii = XKeysymToString(sym);
+                        /* FIXME: handle shift, ctrl-w, ctrl-u */
+                        if (ascii != NULL){
+                            std::string add;
+                            if (std::string(ascii) == "space"){
+                                add = " ";
+                            } else if (strlen(ascii) == 1){
+                                add = ascii;
+                            }
+
+                            if (add != ""){
+                                window_title += add;
+                                redraw = true;
+                            }
+                        }
+                    }
+                    XStoreName(display, xborder_window, window_title.c_str());
+                    break;
+                }
+            }
+
+            if (redraw){
+                std::string total;
+                total += "Title: ";
+                total += window_title;
+                XGCValues values;
+                int screen = DefaultScreen(display);
+                values.foreground = WhitePixel(display, screen);
+                GC local = XCreateGC(display, window, GCForeground, &values);
+                int width, height;
+                get_window_dimensions(display, window, &width, &height);
+                // XFillRectangle(display, option_window, local, 0, 0, width, height);
+                XClearWindow(display, window);
+                XDrawString(display, window, graphics, 1, 10, total.c_str(), total.size());
+                XFreeGC(display, local);
+
+                draw_palette(display, window, palette_start);
+            }
+        }
+    }
+
+    static OptionWindow* create(Display * display, Window xborder_window){
+        Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
+        int screen = DefaultScreen(display);
+        // std::cout << "magic" << std::endl;
+        Window window = XCreateSimpleWindow(display, RootWindow(display, screen),
+                                            1, 1,
+                                            (palette_x + 1) * palette_size_block + 5,
+                                            20 + palette_start + (palette_y + 1) * palette_size_block,
+                                            1, BlackPixel(display, screen), WhitePixel(display, screen));
+        XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
+        XGCValues values;
+        // values.font = fontInfo->fid;
+        values.foreground = BlackPixel(display, screen);
+        GC graphics = XCreateGC(display, window, GCForeground, &values);
+        XSelectInput(display, window,
+                     ExposureMask |
+                     KeyPress |
+                     KeyRelease |
+                     ButtonPressMask |
+                     StructureNotifyMask);
+        XMapWindow(display, window);
+        XStoreName(display, window, "XBorder options");
+        XSetWMProtocols(display, window, &wm_delete_window, 1);
+
+        return new OptionWindow(display, window, graphics, xborder_window);
+    }
+
+    virtual ~OptionWindow(){
+        XFreeGC(display, graphics);
+        XUnmapWindow(display, window);
+        XDestroyWindow(display, window);
+    }
+};
+
 void run_xborder(bool glow){
     Display * display;
 
@@ -480,8 +626,9 @@ void run_xborder(bool glow){
     bool shift_pressed = false;
     bool alt_pressed = false;
 
-    Window option_window = 0;
-    int palette_start = 20;
+    OptionWindow* optionWindow = NULL;
+    // Window option_window = 0;
+    // int palette_start = 20;
     std::string window_title = get_window_title(display, child_window);
 
     GC graphics = NULL;
@@ -530,79 +677,15 @@ void run_xborder(bool glow){
         XEvent event;
         XNextEvent(display, &event);
 
-        /*
-        if (event.type == ClientMessage){
-            std::cout << "Top level event client message" << std::endl;
-            std::cout << "Destined for window: " << event.xany.window << std::endl;
-            std::cout << "Type: " << XGetAtomName(display, event.xclient.message_type) << std::endl;
+        if (optionWindow != NULL){
+            optionWindow->handleEvent(&event);
+            if (optionWindow->isDead()){
+                delete optionWindow;
+                optionWindow = NULL;
+            }
         }
-        */
 
-        if (event.xany.window == option_window){
-            bool redraw = false;
-            if (event.type == ClientMessage){
-                if (event.xclient.message_type == wm_protocols_atom &&
-                    (Atom) event.xclient.data.l[0] == wm_delete_window){
-                    XFreeGC(display, graphics);
-                    graphics = NULL;
-                    XUnmapWindow(display, option_window);
-                    XDestroyWindow(display, option_window);
-                    option_window = 0;
-                }
-            } else if (event.type == Expose){
-                redraw = true;
-            } else if (event.type == ButtonPress){
-                int x = event.xbutton.x;
-                int y = event.xbutton.y;
-                if (y >= palette_start && y < palette_start + (palette_y + 1) * palette_size_block &&
-                    x >= 0 && x < (palette_x + 1) * palette_size_block){
-
-                    change_background_color(display, window, get_rgb(x / palette_size_block, (y - palette_start) / palette_size_block));
-                }
-            } else if (event.type == KeyPress){
-                KeySym sym = XLookupKeysym(&event.xkey, 0);
-                if (sym == XK_BackSpace){
-                    redraw = true;
-                    if (window_title.length() > 0){
-                        window_title = window_title.substr(0, window_title.size() - 1);
-                    }
-                } else {
-                    char * ascii = XKeysymToString(sym);
-                    /* FIXME: handle shift, ctrl-w, ctrl-u */
-                    if (ascii != NULL){
-                        std::string add;
-                        if (std::string(ascii) == "space"){
-                            add = " ";
-                        } else if (strlen(ascii) == 1){
-                            add = ascii;
-                        }
-
-                        if (add != ""){
-                            window_title += add;
-                            redraw = true;
-                        }
-                    }
-                }
-                XStoreName(display, window, window_title.c_str());
-            }
-
-            if (redraw){
-                std::string total;
-                total += "Title: ";
-                total += window_title;
-                XGCValues values;
-                values.foreground = WhitePixel(display, screen);
-                GC local = XCreateGC(display, option_window, GCForeground, &values);
-                int width, height;
-                get_window_dimensions(display, option_window, &width, &height);
-                // XFillRectangle(display, option_window, local, 0, 0, width, height);
-                XClearWindow(display, option_window);
-                XDrawString(display, option_window, graphics, 1, 10, total.c_str(), total.size());
-                XFreeGC(display, local);
-
-                draw_palette(display, option_window, palette_start);
-            }
-        } else if (event.xany.window == window){
+        if (event.xany.window == window){
             if (event.type == Expose){
                 /* anything to do here? the child already seems to get expose events */
             } else if (event.type == FocusIn){
@@ -619,27 +702,10 @@ void run_xborder(bool glow){
                     client->data.b[0] == XBorderConfigure){
                     std::cout << "Reconfigure xborder" << std::endl;
 
-                    if (option_window != 0){
-                        XRaiseWindow(display, option_window);
-                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+                    if (optionWindow != NULL){
+                        optionWindow->raise();
                     } else {
-                        // std::cout << "magic" << std::endl;
-                        option_window = XCreateSimpleWindow(display, RootWindow(display, screen), 1, 1, (palette_x + 1) * palette_size_block + 5, 20 + palette_start + (palette_y + 1) * palette_size_block, 1, BlackPixel(display, screen), WhitePixel(display, screen));
-                        XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
-                        XGCValues values;
-                        // values.font = fontInfo->fid;
-                        values.foreground = BlackPixel(display, screen);
-                        graphics = XCreateGC(display, option_window, GCForeground, &values);
-                        XSelectInput(display, option_window,
-                                     ExposureMask |
-                                     KeyPress |
-                                     KeyRelease |
-                                     ButtonPressMask |
-                                     StructureNotifyMask);
-                        XMapWindow(display, option_window);
-                        XStoreName(display, option_window, "XBorder options");
-                        XSetWMProtocols(display, option_window, &wm_delete_window, 1);
-                        XSetInputFocus(display, window, RevertToParent, CurrentTime);
+                        optionWindow = OptionWindow::create(display, window);
                     }
                 } else if (client->message_type == wm_protocols_atom &&
                            (Atom) client->data.l[0] == wm_delete_window){
@@ -660,12 +726,9 @@ void run_xborder(bool glow){
         }
     }
 
-    if (option_window != 0){
-        XFreeGC(display, graphics);
-        graphics = NULL;
-        XUnmapWindow(display, option_window);
-        XDestroyWindow(display, option_window);
-        option_window = 0;
+    if (optionWindow != NULL){
+        delete optionWindow;
+        optionWindow = NULL;
     }
 
     if (child_window != 0){
