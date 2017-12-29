@@ -401,6 +401,8 @@ void set_xborder_window(Display * display, Window window){
     XChangeProperty(display, window, xborder, XA_STRING, 8, PropModeReplace, (unsigned char*) c, 1);
 }
 
+static const int glow_max_speed = 100;
+
 class OptionWindow {
 public:
     const Window window;
@@ -410,6 +412,8 @@ public:
     bool destroy;
     std::string window_title;
     static const int palette_start_y = 40;
+    bool left_button_pressed;
+    static const int glow_line_step = 2;
 
     int glow_line_y;
     int glow_line_height;
@@ -425,7 +429,8 @@ public:
     glow_line_y(0),
     glow_line_height(0),
     glow_line_x(0),
-    glow_line_width(0){
+    glow_line_width(0),
+    left_button_pressed(false){
         window_title = get_window_title(display, xborder_window);
     }
 
@@ -463,6 +468,19 @@ public:
                     redraw = true;
                     break;
                 }
+                case MotionNotify: {
+                    int x = event->xmotion.x;
+                    int use = (x - glow_line_x) / glow_line_step;
+                    if (use < 0){
+                        use = 0;
+                    }
+                    if (use > glow_max_speed){
+                        use = glow_max_speed;
+                    }
+                    *glow = use;
+                    redraw = true;
+                    break;
+                }
                 case ButtonPress: {
                     int x = event->xbutton.x;
                     int y = event->xbutton.y;
@@ -470,10 +488,19 @@ public:
                         x >= 0 && x < (palette_x + 1) * palette_size_block){
 
                         change_background_color(display, xborder_window, get_rgb(x / palette_size_block, (y - palette_start_y) / palette_size_block));
-                    } else if (y >= glow_line_y && y <= glow_line_y + glow_line_height && x >= glow_line_x && x <= glow_line_x + glow_line_width){
-                        *glow = (x - glow_line_x) / 3;
+                    } else if (y >= glow_line_y - glow_line_height / 2 && y <= glow_line_y + glow_line_height / 2 && x >= glow_line_x && x <= glow_line_x + glow_line_width){
+                        *glow = (x - glow_line_x) / glow_line_step;
+                        if (*glow >= glow_max_speed){
+                            *glow = glow_max_speed;
+                        }
+                        left_button_pressed = true;
                         redraw = true;
                     }
+                    break;
+                }
+                case ButtonRelease: {
+                    /* FIXME: check for left button */
+                    left_button_pressed = false;
                     break;
                 }
                 case KeyPress: {
@@ -550,13 +577,14 @@ public:
         if (glow_line_y == 0){
             glow_line_y = line_y;
             glow_line_x = line_x;
-            glow_line_width = glyph_width * 50;
+            glow_line_width = glow_max_speed * glow_line_step;
             glow_line_height = glow_height;
         }
 
-        int glow_x = *glow * 3;
+        int glow_x = *glow * glow_line_step;
 
-        XDrawLine(display, window, graphics, line_x, line_y, glyph_width * 50, line_y);
+        // XDrawLine(display, window, graphics, line_x, line_y, glow_line_width, line_y);
+        XDrawLine(display, window, graphics, line_x, line_y, line_x + glow_line_width, line_y);
 
         XFillRectangle(display, window, graphics, line_x + glow_x, line_y - glow_height / 2, 5, glow_height);
 
@@ -582,6 +610,8 @@ public:
                      KeyPress |
                      KeyRelease |
                      ButtonPressMask |
+                     ButtonReleaseMask |
+                     Button1MotionMask |
                      StructureNotifyMask);
         XMapWindow(display, window);
         XStoreName(display, window, "XBorder options");
@@ -705,7 +735,7 @@ void run_xborder(bool glow){
         /* TODO: move all the glow code into an object */
         if (glow_speed > 0){
             uint64_t check = time_now();
-            int use_speed = 100 - glow_speed;
+            int use_speed = glow_max_speed - glow_speed;
             if (use_speed < 1){
                 use_speed = 1;
             }
