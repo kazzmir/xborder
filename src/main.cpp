@@ -218,9 +218,9 @@ float interpolate(float value, float in_range_min, float in_range_max, float out
     return (value - in_range_min) * b / a + out_range_min;
 }
 
-const int palette_size_block = 20;
-const int palette_x = 16;
-const int palette_y = 5;
+const int palette_size_block = 15;
+const int palette_x = 20;
+const int palette_y = 6;
 
 rgb get_rgb(int h, float s, float v){
     hsv hsv;
@@ -409,14 +409,23 @@ public:
     Display * const display;
     bool destroy;
     std::string window_title;
-    static const int palette_start = 20;
+    static const int palette_start_y = 40;
+
+    int glow_line_y;
+    int glow_line_height;
+    int glow_line_x;
+    int glow_line_width;
 
     OptionWindow(Display * display, Window window, GC graphics, Window xborder_window):
     window(window),
     xborder_window(xborder_window),
     graphics(graphics),
     display(display),
-    destroy(false){
+    destroy(false),
+    glow_line_y(0),
+    glow_line_height(0),
+    glow_line_x(0),
+    glow_line_width(0){
         window_title = get_window_title(display, xborder_window);
     }
 
@@ -428,7 +437,7 @@ public:
         return this->destroy;
     }
 
-    void handleEvent(XEvent * event){
+    void handleEvent(XEvent * event, int * glow){
         if (event->xany.window == this->window){
             bool redraw = false;
             switch (event->type){
@@ -457,10 +466,13 @@ public:
                 case ButtonPress: {
                     int x = event->xbutton.x;
                     int y = event->xbutton.y;
-                    if (y >= palette_start && y < palette_start + (palette_y + 1) * palette_size_block &&
+                    if (y >= palette_start_y && y < palette_start_y + (palette_y + 1) * palette_size_block &&
                         x >= 0 && x < (palette_x + 1) * palette_size_block){
 
-                        change_background_color(display, xborder_window, get_rgb(x / palette_size_block, (y - palette_start) / palette_size_block));
+                        change_background_color(display, xborder_window, get_rgb(x / palette_size_block, (y - palette_start_y) / palette_size_block));
+                    } else if (y >= glow_line_y && y <= glow_line_y + glow_line_height && x >= glow_line_x && x <= glow_line_x + glow_line_width){
+                        *glow = (x - glow_line_x) / 3;
+                        redraw = true;
                     }
                     break;
                 }
@@ -494,12 +506,12 @@ public:
             }
 
             if (redraw){
-                draw();
+                draw(glow);
             }
         }
     }
 
-    void draw(){
+    void draw(int * glow){
         std::string total;
         total += "Title: ";
         total += window_title;
@@ -511,20 +523,54 @@ public:
         get_window_dimensions(display, window, &width, &height);
         // XFillRectangle(display, option_window, local, 0, 0, width, height);
         XClearWindow(display, window);
-        XDrawString(display, window, graphics, 1, 10, total.c_str(), total.size());
         XFreeGC(display, local);
 
-        draw_palette(display, window, palette_start);
+        int y = 10;
+        int font_size = 10;
+        int glyph_width = 1;
+
+        GContext context = XGContextFromGC(graphics);
+        XFontStruct * font = XQueryFont(display, context);
+        if (font != NULL){
+            glyph_width = font->max_bounds.width;
+            font_size = font->max_bounds.ascent - font->max_bounds.descent;
+            // std::cout << "Got font info" << std::endl;
+            XFreeFontInfo(0, font, 1);
+        }
+
+        XDrawString(display, window, graphics, 1, y, total.c_str(), total.size());
+        y += font_size * 3 / 2;
+        const char* glow_name = "Glow: ";
+        XDrawString(display, window, graphics, 1, y, glow_name, strlen(glow_name));
+
+        int line_x = (glyph_width + 1) * strlen(glow_name);
+        int line_y = y - font_size / 2;
+        int glow_height = 12;
+
+        if (glow_line_y == 0){
+            glow_line_y = line_y;
+            glow_line_x = line_x;
+            glow_line_width = glyph_width * 50;
+            glow_line_height = glow_height;
+        }
+
+        int glow_x = *glow * 3;
+
+        XDrawLine(display, window, graphics, line_x, line_y, glyph_width * 50, line_y);
+
+        XFillRectangle(display, window, graphics, line_x + glow_x, line_y - glow_height / 2, 5, glow_height);
+
+        draw_palette(display, window, palette_start_y);
     }
 
     static OptionWindow* create(Display * display, Window xborder_window){
         Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
         int screen = DefaultScreen(display);
-        // std::cout << "magic" << std::endl;
+        int width = (palette_x + 1) * palette_size_block + 5;
+        int height = palette_start_y + (palette_y + 1) * palette_size_block;
         Window window = XCreateSimpleWindow(display, RootWindow(display, screen),
                                             1, 1,
-                                            (palette_x + 1) * palette_size_block + 5,
-                                            20 + palette_start + (palette_y + 1) * palette_size_block,
+                                            width, height,
                                             1, BlackPixel(display, screen), WhitePixel(display, screen));
         XFontStruct * fontInfo = XLoadQueryFont(display, "6x10");
         XGCValues values;
@@ -564,10 +610,13 @@ void run_xborder(bool glow){
 
     XSetErrorHandler(x_error);
 
+    /*
     std::cout << "Once a window has been selected you can press the following keys in the selected window" << std::endl;
     std::cout << "Press 'right alt + right shift' to bring up the options window" << std::endl;
     std::cout << "Press 'left shift + right shift' to close the border" << std::endl;
-    std::cout << "ctrl-c on xborder, or pressing the X window button will also stop the xborder program" << std::endl;
+    */
+    std::cout << "Select an existing window to wrap in xborder" << std::endl;
+    std::cout << "kill the xborder program with ctrl-c, or press the X window button will also stop the xborder program" << std::endl;
 
     struct sigaction action;
     action.sa_handler = &handle_signal;
@@ -622,7 +671,7 @@ void run_xborder(bool glow){
     std::cout << "Child root window after reparent " << get_root_window(display, child_window) << std::endl;
     std::cout << "Child parent window after reparent " << get_parent_window(display, child_window) << std::endl;
     */
-    XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
+    // XSelectInput(display, child_window, KeyPressMask | KeyReleaseMask);
     XMoveWindow(display, window, child_x, child_y);
 
     Atom wm_protocols_atom = XInternAtom(display, "WM_PROTOCOLS", true);
@@ -640,7 +689,10 @@ void run_xborder(bool glow){
 
     uint64_t glow_start = time_now();
     int glow_color = rand() % 360;
-    int glow_speed = 50;
+    int glow_speed = 0;
+    if (glow){
+        glow_speed = 50;
+    }
     
     Atom xborder_atom = XInternAtom(display, "xborder", false);
 
@@ -651,14 +703,18 @@ void run_xborder(bool glow){
         }
 
         /* TODO: move all the glow code into an object */
-        if (glow){
+        if (glow_speed > 0){
             uint64_t check = time_now();
-            int move = (check - glow_start) / glow_speed;
+            int use_speed = 100 - glow_speed;
+            if (use_speed < 1){
+                use_speed = 1;
+            }
+            int move = (check - glow_start) / use_speed;
             if (move > 0){
                 glow_color = (glow_color + move) % 360;
                 rgb next_color = get_rgb(glow_color, 1.0, 1.0);
                 change_background_color(display, window, next_color);
-                glow_start += move * glow_speed;
+                glow_start += move * use_speed;
             }
         }
 
@@ -682,7 +738,7 @@ void run_xborder(bool glow){
         XNextEvent(display, &event);
 
         if (optionWindow != NULL){
-            optionWindow->handleEvent(&event);
+            optionWindow->handleEvent(&event, &glow_speed);
             if (optionWindow->isDead()){
                 delete optionWindow;
                 optionWindow = NULL;
