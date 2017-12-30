@@ -469,16 +469,18 @@ public:
                     break;
                 }
                 case MotionNotify: {
-                    int x = event->xmotion.x;
-                    int use = (x - glow_line_x) / glow_line_step;
-                    if (use < 0){
-                        use = 0;
+                    if (left_button_pressed){
+                        int x = event->xmotion.x;
+                        int use = (x - glow_line_x) / glow_line_step;
+                        if (use < 0){
+                            use = 0;
+                        }
+                        if (use > glow_max_speed){
+                            use = glow_max_speed;
+                        }
+                        *glow = use;
+                        redraw = true;
                     }
-                    if (use > glow_max_speed){
-                        use = glow_max_speed;
-                    }
-                    *glow = use;
-                    redraw = true;
                     break;
                 }
                 case ButtonPress: {
@@ -488,7 +490,10 @@ public:
                         x >= 0 && x < (palette_x + 1) * palette_size_block){
 
                         change_background_color(display, xborder_window, get_rgb(x / palette_size_block, (y - palette_start_y) / palette_size_block));
-                    } else if (y >= glow_line_y - glow_line_height / 2 && y <= glow_line_y + glow_line_height / 2 && x >= glow_line_x && x <= glow_line_x + glow_line_width){
+                    } else if (y >= glow_line_y - glow_line_height / 2 &&
+                               y <= glow_line_y + glow_line_height / 2 &&
+                               x >= glow_line_x &&
+                               x <= glow_line_x + glow_line_width){
                         *glow = (x - glow_line_x) / glow_line_step;
                         if (*glow >= glow_max_speed){
                             *glow = glow_max_speed;
