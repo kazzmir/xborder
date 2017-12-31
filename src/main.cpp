@@ -419,6 +419,7 @@ public:
     int glow_line_height;
     int glow_line_x;
     int glow_line_width;
+    int glow_value;
 
     OptionWindow(Display * display, Window window, GC graphics, Window xborder_window):
     window(window),
@@ -430,6 +431,7 @@ public:
     glow_line_height(0),
     glow_line_x(0),
     glow_line_width(0),
+    glow_value(0),
     left_button_pressed(false){
         window_title = get_window_title(display, xborder_window);
     }
@@ -479,6 +481,7 @@ public:
                             use = glow_max_speed;
                         }
                         *glow = use;
+                        glow_value = *glow;
                         redraw = true;
                     }
                     break;
@@ -498,6 +501,7 @@ public:
                         if (*glow >= glow_max_speed){
                             *glow = glow_max_speed;
                         }
+                        glow_value = *glow;
                         left_button_pressed = true;
                         redraw = true;
                     }
@@ -572,10 +576,11 @@ public:
 
         XDrawString(display, window, graphics, 1, y, total.c_str(), total.size());
         y += font_size * 3 / 2;
-        const char* glow_name = "Glow: ";
-        XDrawString(display, window, graphics, 1, y, glow_name, strlen(glow_name));
+        char glow_info[32];
+        snprintf(glow_info, sizeof(glow_info), "Glow: %d", *glow);
+        XDrawString(display, window, graphics, 1, y, glow_info, strlen(glow_info));
 
-        int line_x = (glyph_width + 1) * strlen(glow_name);
+        int line_x = (glyph_width + 1) * strlen("glow: 123");
         int line_y = y - font_size / 2;
         int glow_height = 12;
 
