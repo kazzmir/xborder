@@ -749,7 +749,7 @@ void run_xborder(bool glow){
             if (use_speed < 1){
                 use_speed = 1;
             }
-            int move = (check - glow_start) / use_speed;
+            int move = (check - glow_start) / use_speed / 2;
             if (move > 0){
                 glow_color = (glow_color + move) % 360;
                 rgb next_color = get_rgb(glow_color, 1.0, 1.0);
