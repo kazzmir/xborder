@@ -1,3 +1,5 @@
+.PHONY: xborder
+
 libs=-lX11
 
 CXX=clang++
