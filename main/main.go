@@ -9,6 +9,7 @@ import (
     "github.com/BurntSushi/xgbutil/mousebind"
     "log"
     "time"
+    "fmt"
 )
 
 func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
@@ -18,7 +19,7 @@ func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
     cursor, err := xcursor.CreateCursor(X, xcursor.Crosshair)
     if err != nil {
         log.Printf("Could not create cursor", err)
-        return root.Id
+        return 0
     }
 
     pressed := make(chan xproto.Window, 1)
@@ -37,15 +38,15 @@ func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
 
     if err != nil {
         log.Printf("Could not grab: %v", err)
-        return root.Id
+        return 0
     }
 
-    // defer mousebind.DetachPress(X, root.Id)
+    defer mousebind.DetachPress(X, root.Id)
 
     grabbed, err := mousebind.GrabPointer(X, root.Id, root.Id, cursor)
     if err != nil {
         log.Printf("Could not grab pointer: %v", err)
-        return root.Id
+        return 0
     }
 
     log.Printf("Grabbed %v", grabbed)
@@ -60,7 +61,25 @@ func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
             log.Printf("Timed out")
     }
 
-    return root.Id
+    return 0
+}
+
+func xborder(X *xgbutil.XUtil, root *xwindow.Window, child *xwindow.Window) error {
+    geometry, err := child.Geometry()
+    if err != nil {
+        return err
+    }
+    border, err := xwindow.Generate(X)
+    if err != nil {
+        return fmt.Errorf("Could not generate xborder window: %v", err)
+    }
+    border.Create(root.Id, geometry.X(), geometry.Y(), geometry.Width(), geometry.Height(), xproto.CwBackPixel, 0xff0000)
+
+    border.Map()
+
+    time.Sleep(1 * time.Second)
+
+    return nil
 }
 
 func main(){
@@ -91,6 +110,14 @@ func main(){
 
     window := chooseWindow(X, root)
     log.Printf("Chose window %v", window)
+
+    if window != 0 && window != root.Id {
+        log.Printf("Xborder on %v", window)
+        err = xborder(X, root, xwindow.New(X, window))
+        if err != nil {
+            log.Printf("Error: %v", err)
+        }
+    }
 
     log.Printf("Shutting down")
 }
