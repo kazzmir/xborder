@@ -3,6 +3,7 @@
 libs=-lX11
 
 CXX=clang++
+CXX=g++
 
 xborder:
 	go build -o xborder ./main

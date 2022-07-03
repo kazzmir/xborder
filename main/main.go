@@ -7,13 +7,34 @@ import (
     "github.com/BurntSushi/xgbutil/xevent"
     "github.com/BurntSushi/xgbutil/xcursor"
     "github.com/BurntSushi/xgbutil/mousebind"
+    "github.com/BurntSushi/xgbutil/icccm"
     "log"
     "time"
     "fmt"
 )
 
-func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
+func findClientWindow(X *xgbutil.XUtil, window xproto.Window) xproto.Window {
+    _, err := icccm.WmStateGet(X, window)
+    if err == nil {
+        return window
+    }
 
+    tree, err := xproto.QueryTree(X.Conn(), window).Reply()
+    if err != nil {
+        return 0
+    }
+
+    for _, try := range tree.Children {
+        use := findClientWindow(X, try)
+        if use != 0 {
+            return use
+        }
+    }
+
+    return 0
+}
+
+func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
     log.Printf("Click on a window")
 
     cursor, err := xcursor.CreateCursor(X, xcursor.Crosshair)
@@ -53,12 +74,31 @@ func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
 
     defer mousebind.UngrabPointer(X)
 
-    select {
-        case window := <-pressed:
-            log.Printf("Pressed a mouse button")
-            return window
-        case <-time.After(5 * time.Second):
-            log.Printf("Timed out")
+    pingBefore, pingAfter, pingQuit := xevent.MainPing(X)
+
+    timeout := time.After(5 * time.Second)
+    for {
+        select {
+            case <-pingBefore:
+            case <-pingAfter:
+            case <-pingQuit:
+                X.Quit = false
+            case window := <-pressed:
+                log.Printf("Pressed a mouse button")
+
+                xevent.Quit(X)
+                for {
+                    select {
+                        case <-pingBefore:
+                        case <-pingAfter:
+                        case <-pingQuit:
+                            X.Quit = false
+                            return findClientWindow(X, window)
+                    }
+                }
+            case <-timeout:
+                log.Printf("Timed out")
+        }
     }
 
     return 0
@@ -81,6 +121,8 @@ func xborder(X *xgbutil.XUtil, root *xwindow.Window, child *xwindow.Window) erro
 
     borderSize := 3
 
+    log.Printf("Xborder window 0x%x", border.Id)
+
     childX := geometry.X()
     childY := geometry.Y()
 
@@ -90,18 +132,118 @@ func xborder(X *xgbutil.XUtil, root *xwindow.Window, child *xwindow.Window) erro
 
     border.Move(childX, childY)
 
+    /* get the original parent */
+    childParent, err := child.Parent()
+    if err != nil {
+        log.Printf("Could not get parent of child: %v", err)
+        childParent = nil
+    } else {
+        log.Printf("Original child parent: 0x%x", childParent.Id)
+    }
+
+    child.Change(xproto.CwOverrideRedirect, 1)
+    defer child.Change(xproto.CwOverrideRedirect, 0)
+
     err = xproto.ReparentWindowChecked(X.Conn(), child.Id, border.Id, int16(borderSize), int16(borderSize)).Check()
     if err != nil {
         log.Printf("Unable to reparent child window into xborder window: %v", err)
     }
 
-    time.Sleep(1 * time.Second)
+    done := make(chan bool, 1)
 
-    err = xproto.ReparentWindowChecked(X.Conn(), child.Id, root.Id, 0, 0).Check()
-    if err != nil {
-        log.Printf("Unable to reparent child window back to root", err)
+    border.Listen(xproto.EventMaskExposure,
+                  xproto.EventMaskFocusChange,
+                  xproto.EventMaskSubstructureNotify,
+                  xproto.EventMaskStructureNotify)
+
+    // Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", false);
+    // XSetWMProtocols(display, window, &wm_delete_window, 1);
+    // icccm.WmProtocolsSet(X, border.Id, []string{"WM_DELETE_WINDOW"})
+    border.WMGracefulClose(func (self *xwindow.Window){
+        // log.Printf("Client mesage: delete? %v", icccm.IsDeleteProtocol(X, event))
+        done <- true
+    })
+
+    /*
+    xevent.ClientMessageFun(func (X* xgbutil.XUtil, event xevent.ClientMessageEvent){
+        log.Printf("Client mesage: delete? %v", icccm.IsDeleteProtocol(X, event))
+        done <- true
+    }).Connect(X, border.Id)
+    */
+
+    xevent.ConfigureNotifyFun(func (X* xgbutil.XUtil, event xevent.ConfigureNotifyEvent){
+        // log.Printf("Notify on xborder")
+        /*
+        parent, err := child.Parent()
+        if err == nil {
+            log.Printf("Child 0x%x parent=0x%x", child.Id, parent.Id)
+            if parent.Id != border.Id {
+                err = xproto.ReparentWindowChecked(X.Conn(), child.Id, border.Id, int16(borderSize), int16(borderSize)).Check()
+            }
+        } else {
+            log.Printf("Could not get parent: %v", err)
+        }
+        */
+
+
+        geometry, err := border.Geometry()
+        if err == nil {
+            child.Resize(geometry.Width() - borderSize * 2, geometry.Height() - borderSize * 2)
+        } else {
+            log.Printf("Could not get xborder geometry: %v", err)
+        }
+        // XResizeWindow(display, child_window, self.width - border_size * 2, self.height - border_size * 2);
+
+    }).Connect(X, border.Id)
+
+    /* process X events */
+    pingBefore, pingAfter, pingQuit := xevent.MainPing(X)
+    quit := false
+    for !quit{
+        select {
+            case <-done:
+                xevent.Quit(X)
+
+                err = xproto.ReparentWindowChecked(X.Conn(), child.Id, root.Id, 0, 0).Check()
+                if err != nil {
+                    log.Printf("Unable to reparent child window back to root: %v", err)
+                }
+
+                geometry, err := border.Geometry()
+                if err == nil {
+                    log.Printf("Geometry: %v", geometry)
+                    x := geometry.X()
+                    y := geometry.Y()
+                    log.Printf("Move child back to %v, %v", x, y)
+                    child.Move(x, y)
+                }
+            case <-pingBefore:
+                parent, err := child.Parent()
+                if err == nil {
+                    log.Printf("Child 0x%x parent=0x%x", child.Id, parent.Id)
+                    if parent.Id != border.Id {
+                        err = xproto.ReparentWindowChecked(X.Conn(), child.Id, border.Id, int16(borderSize), int16(borderSize)).Check()
+                    }
+                } else {
+                    log.Printf("Could not get parent: %v", err)
+                }
+            case <-pingAfter:
+            case <-pingQuit:
+                quit = true
+        }
     }
-    child.Move(childX, childY)
+
+    /*
+    if childParent != nil {
+        log.Printf("Set child back to parent 0x%x", childParent.Id)
+        err = xproto.ReparentWindowChecked(X.Conn(), child.Id, childParent.Id, 0, 0).Check()
+        if err != nil {
+            log.Printf("Unable to reparent child window back to root: %v", err)
+        }
+    }
+    */
+
+    // go xevent.Main(X)
 
     return nil
 }
@@ -125,18 +267,16 @@ func main(){
         return
     }
 
-    /* process X events */
-    go xevent.Main(X)
 
     for _, window := range tree.Children {
-        log.Printf("Window: %v", window)
+        log.Printf("Window: 0x%x", window)
     }
 
     window := chooseWindow(X, root)
-    log.Printf("Chose window %v", window)
+    log.Printf("Chose window 0x%x", window)
 
     if window != 0 && window != root.Id {
-        log.Printf("Xborder on %v", window)
+        log.Printf("Xborder on 0x%x", window)
         err = xborder(X, root, xwindow.New(X, window))
         if err != nil {
             log.Printf("Error: %v", err)
