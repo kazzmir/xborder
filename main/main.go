@@ -5,6 +5,7 @@ import (
     "github.com/BurntSushi/xgbutil"
     "github.com/BurntSushi/xgbutil/xwindow"
     "github.com/BurntSushi/xgbutil/xevent"
+    "github.com/BurntSushi/xgbutil/xcursor"
     "github.com/BurntSushi/xgbutil/mousebind"
     "log"
     "time"
@@ -13,8 +14,15 @@ import (
 func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
 
     log.Printf("Click on a window")
+
+    cursor, err := xcursor.CreateCursor(X, xcursor.Crosshair)
+    if err != nil {
+        log.Printf("Could not create cursor", err)
+        return root.Id
+    }
+
     pressed := make(chan xproto.Window, 1)
-    err := mousebind.ButtonPressFun(
+    err = mousebind.ButtonPressFun(
         func (X *xgbutil.XUtil, event xevent.ButtonPressEvent){
             log.Printf("Button pressed on window root=0x%x event=0x%x child=0x%x", event.Root, event.Event, event.Child)
             /*
@@ -25,14 +33,24 @@ func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
             */
 
             pressed <- event.Child
-    }).Connect(X, root.Id, "1", true, true)
+    }).Connect(X, root.Id, "1", false, false)
 
     if err != nil {
         log.Printf("Could not grab: %v", err)
         return root.Id
     }
 
-    defer mousebind.DetachPress(X, root.Id)
+    // defer mousebind.DetachPress(X, root.Id)
+
+    grabbed, err := mousebind.GrabPointer(X, root.Id, root.Id, cursor)
+    if err != nil {
+        log.Printf("Could not grab pointer: %v", err)
+        return root.Id
+    }
+
+    log.Printf("Grabbed %v", grabbed)
+
+    defer mousebind.UngrabPointer(X)
 
     select {
         case window := <-pressed:
