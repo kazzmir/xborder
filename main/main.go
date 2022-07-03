@@ -64,6 +64,10 @@ func chooseWindow(X *xgbutil.XUtil, root *xwindow.Window) xproto.Window {
     return 0
 }
 
+func rgb(red uint32, green uint32, blue uint32) uint32 {
+    return (red << 16) | (green << 8) | blue
+}
+
 func xborder(X *xgbutil.XUtil, root *xwindow.Window, child *xwindow.Window) error {
     geometry, err := child.Geometry()
     if err != nil {
@@ -73,11 +77,31 @@ func xborder(X *xgbutil.XUtil, root *xwindow.Window, child *xwindow.Window) erro
     if err != nil {
         return fmt.Errorf("Could not generate xborder window: %v", err)
     }
-    border.Create(root.Id, geometry.X(), geometry.Y(), geometry.Width(), geometry.Height(), xproto.CwBackPixel, 0xff0000)
+    defer border.Destroy()
+
+    borderSize := 3
+
+    childX := geometry.X()
+    childY := geometry.Y()
+
+    border.Create(root.Id, geometry.X(), geometry.Y(), geometry.Width() + borderSize * 2, geometry.Height() + borderSize * 2, xproto.CwBackPixel, rgb(255, 0, 0))
 
     border.Map()
 
+    border.Move(childX, childY)
+
+    err = xproto.ReparentWindowChecked(X.Conn(), child.Id, border.Id, int16(borderSize), int16(borderSize)).Check()
+    if err != nil {
+        log.Printf("Unable to reparent child window into xborder window: %v", err)
+    }
+
     time.Sleep(1 * time.Second)
+
+    err = xproto.ReparentWindowChecked(X.Conn(), child.Id, root.Id, 0, 0).Check()
+    if err != nil {
+        log.Printf("Unable to reparent child window back to root", err)
+    }
+    child.Move(childX, childY)
 
     return nil
 }
